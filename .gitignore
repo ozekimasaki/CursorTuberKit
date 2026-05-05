@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.devbox/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+memory/
