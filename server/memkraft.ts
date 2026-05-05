@@ -3,6 +3,7 @@ import { existsSync } from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import type { ConversationTurn, MemKraftPromptContext, StoredExchange } from "./aiCommon.js"
+import { executeMemKraftInContainer, getMemKraftExecutionMode } from "./memkraftContainer.js"
 
 type LoadContextResponse = {
   continuity_notes?: unknown
@@ -73,6 +74,16 @@ async function runMemKraftCommand<T>(command: string, payload: unknown): Promise
     throw new MemKraftConfigurationError(`MemKraft helper が見つかりません: ${helperPath}`)
   }
 
+  if (getMemKraftExecutionMode() === "container") {
+    try {
+      return parseMemKraftJson<T>(await executeMemKraftInContainer(command, payload))
+    } catch (error) {
+      throw new MemKraftConfigurationError(
+        error instanceof Error ? error.message : "MemKraft container execution failed.",
+      )
+    }
+  }
+
   const pythonExecutable = resolvePythonExecutable()
 
   return new Promise<T>((resolve, reject) => {
@@ -129,28 +140,10 @@ async function runMemKraftCommand<T>(command: string, payload: unknown): Promise
         return
       }
 
-      const trimmed = stdout.trim()
-
-      if (!trimmed) {
-        reject(new MemKraftError("MemKraft helper から応答が返りませんでした。"))
-        return
-      }
-
-      const jsonLine = trimmed
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .filter(Boolean)
-        .at(-1)
-
-      if (!jsonLine) {
-        reject(new MemKraftError("MemKraft helper から JSON 応答を取得できませんでした。"))
-        return
-      }
-
       try {
-        resolve(JSON.parse(jsonLine) as T)
-      } catch {
-        reject(new MemKraftError(`MemKraft helper の応答を解釈できませんでした: ${trimmed}`))
+        resolve(parseMemKraftJson<T>({ stderr, stdout }))
+      } catch (error) {
+        reject(error)
       }
     })
 
@@ -203,6 +196,30 @@ function commandExists(command: string) {
     return result.status === 0
   } catch {
     return false
+  }
+}
+
+function parseMemKraftJson<T>({ stdout }: { stderr?: string; stdout: string }) {
+  const trimmed = stdout.trim()
+
+  if (!trimmed) {
+    throw new MemKraftError("MemKraft helper から応答が返りませんでした。")
+  }
+
+  const jsonLine = trimmed
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .at(-1)
+
+  if (!jsonLine) {
+    throw new MemKraftError("MemKraft helper から JSON 応答を取得できませんでした。")
+  }
+
+  try {
+    return JSON.parse(jsonLine) as T
+  } catch {
+    throw new MemKraftError(`MemKraft helper の応答を解釈できませんでした: ${trimmed}`)
   }
 }
 

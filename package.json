@@ -8,10 +8,10 @@
     "bun": ">=1.3.11"
   },
   "scripts": {
-    "dev": "sh scripts/ensure-supported-install.sh && sh scripts/runtime-entry.sh tsc -p tsconfig.node.json && sh scripts/runtime-entry.sh js-script scripts/voicevox.mjs start && concurrently -k \"sh scripts/runtime-entry.sh server-dev\" \"sh scripts/runtime-entry.sh vite --host 0.0.0.0\"",
+    "dev": "sh scripts/ensure-supported-install.sh && sh scripts/runtime-entry.sh tsc -p tsconfig.node.json && sh scripts/runtime-entry.sh tsx scripts/memkraft.ts prepare && sh scripts/runtime-entry.sh js-script scripts/voicevox.mjs start && concurrently -k \"sh scripts/runtime-entry.sh server-dev\" \"sh scripts/runtime-entry.sh vite --host 0.0.0.0\"",
     "dev:client": "sh scripts/ensure-supported-install.sh && sh scripts/runtime-entry.sh vite --host 0.0.0.0",
     "dev:server": "sh scripts/ensure-supported-install.sh && sh scripts/runtime-entry.sh tsc -p tsconfig.node.json && sh scripts/runtime-entry.sh server-dev",
-    "dev:bun": "sh scripts/ensure-supported-install.sh && bunx tsc -p tsconfig.node.json && bun scripts/voicevox.mjs start && concurrently -k \"sh scripts/runtime-entry.sh server-dev\" \"bunx vite --host 0.0.0.0\"",
+    "dev:bun": "sh scripts/ensure-supported-install.sh && bunx tsc -p tsconfig.node.json && sh scripts/runtime-entry.sh tsx scripts/memkraft.ts prepare && bun scripts/voicevox.mjs start && concurrently -k \"sh scripts/runtime-entry.sh server-dev\" \"bunx vite --host 0.0.0.0\"",
     "build": "sh scripts/ensure-supported-install.sh && sh scripts/runtime-entry.sh tsc -p tsconfig.json --noEmit && sh scripts/runtime-entry.sh tsc -p tsconfig.node.json --noEmit && sh scripts/runtime-entry.sh vite build && sh scripts/runtime-entry.sh tsc -p tsconfig.node.json && cp server/*.py dist/server/",
     "build:client": "sh scripts/ensure-supported-install.sh && sh scripts/runtime-entry.sh vite build",
     "build:server": "sh scripts/ensure-supported-install.sh && sh scripts/runtime-entry.sh tsc -p tsconfig.node.json && cp server/*.py dist/server/",
@@ -21,17 +21,24 @@
     "start:node": "sh scripts/ensure-supported-install.sh && NODE_ENV=production node dist/server/index.js",
     "typecheck": "sh scripts/ensure-supported-install.sh && sh scripts/runtime-entry.sh tsc -p tsconfig.json --noEmit && sh scripts/runtime-entry.sh tsc -p tsconfig.node.json --noEmit",
     "typecheck:bun": "sh scripts/ensure-supported-install.sh && bunx tsc -p tsconfig.json --noEmit && bunx tsc -p tsconfig.node.json --noEmit",
+    "memkraft:start": "sh scripts/runtime-entry.sh tsx scripts/memkraft.ts start",
+    "memkraft:status": "sh scripts/runtime-entry.sh tsx scripts/memkraft.ts status",
+    "memkraft:stop": "sh scripts/runtime-entry.sh tsx scripts/memkraft.ts stop",
     "voicevox:start": "sh scripts/runtime-entry.sh js-script scripts/voicevox.mjs start",
     "voicevox:status": "sh scripts/runtime-entry.sh js-script scripts/voicevox.mjs status",
     "voicevox:stop": "sh scripts/runtime-entry.sh js-script scripts/voicevox.mjs stop"
   },
   "dependencies": {
     "@cursor/sdk": "^1.0.7",
+    "@gbrlstr/kick-flow": "^1.0.5",
     "@google/genai": "^1.51.0",
+    "@twurple/auth": "^8.1.3",
+    "@twurple/chat": "^8.1.3",
     "dotenv": "^16.4.7",
     "express": "^4.19.2",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "youtubei.js": "^17.0.1"
   },
   "overrides": {
     "@tootallnate/once": "^3.0.1",

@@ -2,6 +2,7 @@ import express, { type Request, type Response } from "express"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { characterProfile } from "../shared/characterProfile.js"
+import { isPlatformChatMode, type PlatformChatMode } from "../shared/platformChat.js"
 import { buildAvatarPrompt, type ConversationTurn } from "./aiCommon.js"
 import { readAiProvider, streamAiResponse, validateAiConfiguration } from "./aiProvider.js"
 import {
@@ -9,6 +10,7 @@ import {
   persistMemKraftExchange,
   validateMemKraftConfiguration,
 } from "./memkraft.js"
+import { PlatformChatOrchestrator } from "./platformChatOrchestrator.js"
 import { getVoicevoxHealth, synthesizeVoice, VoicevoxError } from "./voicevox.js"
 
 const isBunRuntime = typeof globalThis === "object" && "Bun" in globalThis
@@ -26,10 +28,16 @@ type VoicevoxSynthesisRequestBody = {
   text?: unknown
 }
 
+type PlatformChatStartRequestBody = {
+  mode?: unknown
+  target?: unknown
+}
+
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const app = express()
 const port = Number(process.env.PORT ?? 8787)
+const platformChatOrchestrator = new PlatformChatOrchestrator()
 
 app.use(express.json({ limit: "64kb" }))
 
@@ -48,6 +56,63 @@ app.get("/api/voicevox/health", async (_request, response) => {
     response.json(await getVoicevoxHealth(abortController.signal))
   } finally {
     clearTimeout(timeout)
+  }
+})
+
+app.get("/api/platform-chat/state", (_request, response) => {
+  response.json(platformChatOrchestrator.getSnapshot())
+})
+
+app.get("/api/platform-chat/stream", (_request, response) => {
+  prepareSseResponse(response)
+
+  const writeState = (state: ReturnType<typeof platformChatOrchestrator.getSnapshot>["state"]) => {
+    writeSse(response, "state", state)
+  }
+
+  const writeViewerEvent = (event: ReturnType<typeof platformChatOrchestrator.getSnapshot>["recentEvents"][number]) => {
+    writeSse(response, "viewer-event", event)
+  }
+
+  const snapshot = platformChatOrchestrator.getSnapshot()
+  writeState(snapshot.state)
+  for (const event of snapshot.recentEvents.slice().reverse()) {
+    writeViewerEvent(event)
+  }
+
+  platformChatOrchestrator.on("state", writeState)
+  platformChatOrchestrator.on("viewer-event", writeViewerEvent)
+
+  response.on("close", () => {
+    platformChatOrchestrator.off("state", writeState)
+    platformChatOrchestrator.off("viewer-event", writeViewerEvent)
+    response.end()
+  })
+})
+
+app.post(
+  "/api/platform-chat/start",
+  async (request: Request<unknown, unknown, PlatformChatStartRequestBody>, response) => {
+    const config = parsePlatformChatConfig(request.body)
+
+    if (!config) {
+      response.status(400).json({ error: "mode と target を正しく指定してください。" })
+      return
+    }
+
+    try {
+      response.json(await platformChatOrchestrator.start(config.mode, config.target))
+    } catch (error) {
+      response.status(500).json({ error: getErrorMessage(error) })
+    }
+  },
+)
+
+app.post("/api/platform-chat/stop", async (_request, response) => {
+  try {
+    response.json(await platformChatOrchestrator.stop())
+  } catch (error) {
+    response.status(500).json({ error: getErrorMessage(error) })
   }
 })
 
@@ -242,6 +307,22 @@ function parseSpeechText(body: VoicevoxSynthesisRequestBody) {
   }
 
   return text
+}
+
+function parsePlatformChatConfig(body: PlatformChatStartRequestBody): { mode: PlatformChatMode; target: string } | null {
+  if (!isPlatformChatMode(body.mode) || typeof body.target !== "string") {
+    return null
+  }
+
+  const target = body.target.trim()
+  if (!target || target.length > 400) {
+    return null
+  }
+
+  return {
+    mode: body.mode,
+    target,
+  }
 }
 
 function prepareSseResponse(response: Response) {

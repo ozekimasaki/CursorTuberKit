@@ -1,12 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" viewBox="0 0 900 900" preserveAspectRatio="xMidYMid meet" role="img" aria-labelledby="title desc" lang="ja" xml:lang="ja" shape-rendering="geometricPrecision" class="maid-cat-svg">
   <title id="title">メイド猫キャラクター</title>
-  <desc id="desc">オレンジ色の猫が、白いフリルのヘッドドレス、黒いメイド服、白いエプロン、ピンクのリボン、ベル付き首輪、肉球グローブ、ニーソックス、巻いた尻尾、紅茶とカップケーキを載せたトレイを身につけた、かわいいSVGイラスト。</desc>
+  <desc id="desc">オレンジ色の猫が、白いフリルのヘッドドレス、黒いメイド服、白いエプロン、ピンクのリボン、ベル付き首輪、肉球グローブ、ニーソックス、巻いた尻尾、紅茶とカップケーキを載せたトレイを身につけ、明るいホログラムUIの演出を背負って配信画面に立つ、かわいいSVGイラスト。</desc>
   <metadata>
     <rdf:RDF>
       <cc:Work rdf:about="">
         <dc:title xml:lang="ja">メイド猫キャラクター</dc:title>
         <dc:creator>GitHub Copilot</dc:creator>
-        <dc:description xml:lang="ja">かわいいメイド猫マスコットのオリジナルSVGイラスト。</dc:description>
+        <dc:description xml:lang="ja">明るいホログラムUIの演出をまとった、かわいいメイド猫マスコットのオリジナルSVGイラスト。</dc:description>
         <dc:rights>CC-BY-4.0</dc:rights>
         <cc:license rdf:resource="https://creativecommons.org/licenses/by/4.0/"/>
       </cc:Work>
@@ -17,6 +17,25 @@
       <stop offset="0%" stop-color="#fff9ff"/>
       <stop offset="62%" stop-color="#f6e9ff"/>
       <stop offset="100%" stop-color="#ead8ff"/>
+    </radialGradient>
+    <linearGradient id="petBase" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#07111f"/>
+      <stop offset="45%" stop-color="#151f42"/>
+      <stop offset="100%" stop-color="#1d1438"/>
+    </linearGradient>
+    <linearGradient id="petFrame" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#79f0ff"/>
+      <stop offset="45%" stop-color="#95a6ff"/>
+      <stop offset="100%" stop-color="#ff82b9"/>
+    </linearGradient>
+    <linearGradient id="petInner" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f8fdff"/>
+      <stop offset="100%" stop-color="#d9eeff"/>
+    </linearGradient>
+    <radialGradient id="petCoreGlow" cx="50%" cy="44%" r="42%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity=".72"/>
+      <stop offset="34%" stop-color="#9eeeff" stop-opacity=".34"/>
+      <stop offset="100%" stop-color="#69dfff" stop-opacity="0"/>
     </radialGradient>
     <linearGradient id="fur" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0%" stop-color="#ffe9cb"/>
@@ -41,6 +60,13 @@
     <filter id="smallShadow" x="-30%" y="-30%" width="160%" height="160%">
       <feDropShadow dx="0" dy="5" stdDeviation="5" flood-color="#574366" flood-opacity=".26"/>
     </filter>
+    <filter id="neonGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="0" stdDeviation="10" flood-color="#63e6ff" flood-opacity=".4"/>
+      <feDropShadow dx="0" dy="0" stdDeviation="18" flood-color="#b985ff" flood-opacity=".22"/>
+    </filter>
+    <filter id="panelGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="0" stdDeviation="12" flood-color="#63e6ff" flood-opacity=".18"/>
+    </filter>
     <style>
       .line{stroke:#3e2b36;stroke-width:8;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:10}
       .thin{stroke:#3e2b36;stroke-width:5;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:10}
@@ -56,7 +82,33 @@
     </style>
   </defs>
 
-  <rect width="900" height="900" rx="52" fill="url(#bgGlow)"/>
+  <rect width="900" height="900" rx="52" fill="none"/>
+  <g id="pet-interface" aria-hidden="true">
+    <ellipse cx="450" cy="402" rx="244" ry="264" fill="url(#petCoreGlow)" filter="url(#neonGlow)"/>
+    <ellipse cx="450" cy="402" rx="230" ry="246" fill="none" stroke="#7be9ff" stroke-width="4" opacity=".16"/>
+    <ellipse cx="450" cy="402" rx="194" ry="208" fill="none" stroke="#7be9ff" stroke-width="3" opacity=".18"/>
+    <path d="M257 171c73-49 313-49 386 0" fill="none" stroke="url(#petFrame)" stroke-width="8" stroke-linecap="round" opacity=".78"/>
+    <path d="M208 735c94 42 396 42 490 0" fill="none" stroke="url(#petFrame)" stroke-width="8" stroke-linecap="round" opacity=".6"/>
+    <path d="M250 402h86m228 0h86M450 172v68M450 568v74" fill="none" stroke="#7be9ff" stroke-width="5" stroke-linecap="round" opacity=".24"/>
+    <path d="M148 240l126-48 71 52-46 95-124 26-50-65z" fill="url(#petInner)" stroke="url(#petFrame)" stroke-width="6" filter="url(#panelGlow)" opacity=".86"/>
+    <path d="M752 240l-126-48-71 52 46 95 124 26 50-65z" fill="url(#petInner)" stroke="url(#petFrame)" stroke-width="6" filter="url(#panelGlow)" opacity=".86"/>
+    <path d="M233 186h162l25 24H233z" fill="#eafaff" stroke="#7be9ff" stroke-width="4"/>
+    <path d="M505 186h162l-36 24H505z" fill="#f7ebff" stroke="#ff89ba" stroke-width="4"/>
+    <path d="M225 666h190l28 30H225z" fill="#eafaff" stroke="#7be9ff" stroke-width="4"/>
+    <path d="M486 696h188l-31 30H486z" fill="#f7ebff" stroke="#c291ff" stroke-width="4"/>
+    <path d="M232 271h92l14 17h-92zM576 271h92l-14 17h-92z" fill="#edf9ff" stroke="#7be9ff" stroke-width="3" opacity=".92"/>
+    <g fill="none" stroke="#7be9ff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" opacity=".28">
+      <path d="M202 238h104M166 274h130M154 310h112"/>
+      <path d="M698 238h-104M734 274h-130M746 310h-112"/>
+      <path d="M222 606h110M182 640h150M680 606h-110M720 640h-150"/>
+    </g>
+    <g fill="#9ff6ff" opacity=".72">
+      <circle cx="191" cy="191" r="7"/>
+      <circle cx="708" cy="191" r="7"/>
+      <circle cx="204" cy="706" r="7"/>
+      <circle cx="692" cy="706" r="7"/>
+    </g>
+  </g>
   <g aria-hidden="true" opacity=".42" fill="none" stroke="#fff" stroke-width="5">
     <path d="M104 160c45-45 96-45 141 0M656 160c45-45 96-45 141 0"/>
     <path d="M116 700c63 35 128 36 193 3M591 703c65 33 130 32 193-3"/>

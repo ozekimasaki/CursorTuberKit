@@ -1,5 +1,10 @@
 import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from "react"
 import { characterProfile, characterProfileHighlights } from "../../shared/characterProfile"
+import type {
+  PlatformChatMode,
+  PlatformChatState,
+  PlatformViewerEvent,
+} from "../../shared/platformChat"
 import { type StreamStatus } from "../App"
 import { type VoicevoxHealth } from "../lib/voicevox"
 
@@ -14,6 +19,16 @@ type ControlDockProps = {
   status: StreamStatus
   voiceEnabled: boolean
   voicevoxHealth: VoicevoxHealth | null
+  platformMode: PlatformChatMode
+  platformTarget: string
+  platformState: PlatformChatState
+  liveViewerEvents: PlatformViewerEvent[]
+  autoReplyEnabled: boolean
+  onAutoReplyEnabledChange: (enabled: boolean) => void
+  onPlatformModeChange: (mode: PlatformChatMode) => void
+  onPlatformStart: () => void
+  onPlatformStop: () => void
+  onPlatformTargetChange: (target: string) => void
 }
 
 type DockTab = "compose" | "transcript" | "settings"
@@ -29,6 +44,16 @@ export function ControlDock({
   status,
   voiceEnabled,
   voicevoxHealth,
+  platformMode,
+  platformTarget,
+  platformState,
+  liveViewerEvents,
+  autoReplyEnabled,
+  onAutoReplyEnabledChange,
+  onPlatformModeChange,
+  onPlatformStart,
+  onPlatformStop,
+  onPlatformTargetChange,
 }: ControlDockProps) {
   const [prompt, setPrompt] = useState("")
   const [tab, setTab] = useState<DockTab>("compose")
@@ -36,6 +61,9 @@ export function ControlDock({
 
   const isBusy = status === "thinking" || status === "synthesizing" || status === "playing"
   const canSubmit = !isBusy && prompt.trim().length > 0
+  const isPlatformConnecting = platformState.status === "connecting"
+  const isPlatformConnected = platformState.status === "connected"
+  const canStartPlatform = !isPlatformConnecting && platformTarget.trim().length > 0
 
   useEffect(() => {
     const ta = textareaRef.current
@@ -65,6 +93,14 @@ export function ControlDock({
       ? `接続中 · speaker ${voicevoxHealth.speaker}${voicevoxHealth.version ? ` · ${voicevoxHealth.version}` : ""}`
       : `未接続 · ${voicevoxHealth.url}`
     : "確認中..."
+  const platformSummary =
+    platformState.status === "connected"
+      ? `接続中 · ${platformState.mode ?? "unknown"}`
+      : platformState.status === "connecting"
+        ? "接続中..."
+        : platformState.status === "error"
+          ? `エラー · ${platformState.lastError ?? "接続失敗"}`
+          : "未接続"
 
   return (
     <aside className={`dock${open ? " dock--open" : ""}`} aria-hidden={!open} aria-label="操作ドック">
@@ -80,8 +116,8 @@ export function ControlDock({
 
       <nav className="dock__tabs" role="tablist">
         {([
-          ["compose", "プロンプト"],
-          ["transcript", "応答"],
+          ["compose", "コメント"],
+          ["transcript", "字幕"],
           ["settings", "設定"],
         ] as const).map(([key, label]) => (
           <button
@@ -99,43 +135,127 @@ export function ControlDock({
 
       <div className="dock__body">
         {tab === "compose" && (
-          <form className="composer" onSubmit={handleSubmit}>
-            <div className="composer__meta">
-              <span>Ctrl / Cmd + Enter で送信</span>
-              <span>{prompt.length} / 4000</span>
+          <>
+            <div className="card">
+              <p className="card__title">Live Chat Mode</p>
+              <div className="field-group">
+                <label className="field">
+                  <span className="card__key">プラットフォーム</span>
+                  <select
+                    className="field__input"
+                    value={platformMode}
+                    onChange={(e) => onPlatformModeChange(e.target.value as PlatformChatMode)}
+                    disabled={isPlatformConnecting}
+                  >
+                    <option value="youtube">YouTube</option>
+                    <option value="twitch">Twitch</option>
+                    <option value="kick">Kick</option>
+                  </select>
+                </label>
+                <label className="field">
+                  <span className="card__key">{platformTargetLabel(platformMode)}</span>
+                  <input
+                    className="field__input"
+                    type="text"
+                    value={platformTarget}
+                    placeholder={platformTargetPlaceholder(platformMode)}
+                    onChange={(e) => onPlatformTargetChange(e.target.value)}
+                    disabled={isPlatformConnecting}
+                  />
+                </label>
+              </div>
+              <div className="composer__actions">
+                <button className="btn btn--primary" type="button" onClick={onPlatformStart} disabled={!canStartPlatform}>
+                  {isPlatformConnected ? "再接続" : isPlatformConnecting ? "接続中…" : "接続"}
+                </button>
+                <button className="btn" type="button" onClick={onPlatformStop} disabled={!isPlatformConnected && !isPlatformConnecting}>
+                  切断
+                </button>
+              </div>
+              <div className="card__row">
+                <span className="card__key">状態</span>
+                <span className={`card__val card__val--${platformState.status === "error" ? "err" : platformState.status === "connected" ? "ok" : "warn"}`}>
+                  {platformSummary}
+                </span>
+              </div>
+              <div className="card__row">
+                <span className="card__key">自動返答</span>
+                <label className="toggle">
+                  <input
+                    type="checkbox"
+                    checked={autoReplyEnabled}
+                    onChange={(e) => onAutoReplyEnabledChange(e.target.checked)}
+                  />
+                  <span className="toggle__slider" />
+                </label>
+              </div>
+              <p className="card__hint">返答はこのアプリ内でのみ再生・表示されます。各サービスへの自動投稿はまだ行いません。</p>
             </div>
-            <textarea
-              ref={textareaRef}
-              aria-label={characterProfile.promptLabel}
-              maxLength={4000}
-              placeholder={characterProfile.promptPlaceholder}
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              onKeyDown={handleKeyDown}
-              rows={5}
-            />
-            <div className="composer__actions">
-              <button className="btn btn--primary" type="submit" disabled={!canSubmit}>
-                {isBusy ? "応答中…" : "送信"}
-              </button>
-              <button
-                className="btn"
-                type="button"
-                onClick={() => setPrompt("")}
-                disabled={isBusy || !prompt}
-              >
-                クリア
-              </button>
-              <button
-                className="btn btn--ghost"
-                type="button"
-                onClick={onCancel}
-                disabled={!isBusy}
-              >
-                中断
-              </button>
+
+            <div className="card">
+              <p className="card__title">受信コメント</p>
+              {liveViewerEvents.length > 0 ? (
+                <div className="event-feed">
+                  {liveViewerEvents.map((event) => (
+                    <article
+                      key={event.id}
+                      className={`event-item${event.isMonetized ? " event-item--monetized" : ""}`}
+                    >
+                      <div className="event-item__head">
+                        <span className="event-item__badge">{eventLabel(event)}</span>
+                        <strong className="event-item__author">{event.authorName}</strong>
+                        {event.monetization?.amountText && (
+                          <span className="event-item__money">{event.monetization.amountText}</span>
+                        )}
+                      </div>
+                      <p className="event-item__text">{event.text}</p>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <p className="event-feed__empty">まだ配信コメントは受信していません。</p>
+              )}
             </div>
-          </form>
+
+            <form className="composer" onSubmit={handleSubmit}>
+              <p className="card__title">Manual Fallback</p>
+              <div className="composer__meta">
+                <span>Ctrl / Cmd + Enter で送信</span>
+                <span>{prompt.length} / 4000</span>
+              </div>
+              <textarea
+                ref={textareaRef}
+                aria-label={characterProfile.promptLabel}
+                maxLength={4000}
+                placeholder={characterProfile.promptPlaceholder}
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                onKeyDown={handleKeyDown}
+                rows={5}
+              />
+              <div className="composer__actions">
+                <button className="btn btn--primary" type="submit" disabled={!canSubmit}>
+                  {isBusy ? "応答中…" : "送信"}
+                </button>
+                <button
+                  className="btn"
+                  type="button"
+                  onClick={() => setPrompt("")}
+                  disabled={isBusy || !prompt}
+                >
+                  クリア
+                </button>
+                <button
+                  className="btn btn--ghost"
+                  type="button"
+                  onClick={onCancel}
+                  disabled={!isBusy}
+                >
+                  中断
+                </button>
+              </div>
+            </form>
+          </>
         )}
 
         {tab === "transcript" && (
@@ -207,4 +327,47 @@ export function ControlDock({
       </div>
     </aside>
   )
+}
+
+function platformTargetLabel(mode: PlatformChatMode) {
+  switch (mode) {
+    case "youtube":
+      return "配信URL / video ID"
+    case "twitch":
+      return "チャンネル名"
+    case "kick":
+      return "チャンネル名"
+  }
+}
+
+function platformTargetPlaceholder(mode: PlatformChatMode) {
+  switch (mode) {
+    case "youtube":
+      return "https://www.youtube.com/watch?v=... または video ID"
+    case "twitch":
+      return "例: shroud"
+    case "kick":
+      return "例: xqc"
+  }
+}
+
+function eventLabel(event: PlatformViewerEvent) {
+  switch (event.kind) {
+    case "comment":
+      return event.platform.toUpperCase()
+    case "superchat":
+      return "SUPER CHAT"
+    case "paid_sticker":
+      return "PAID STICKER"
+    case "membership":
+      return "MEMBERSHIP"
+    case "subscription":
+      return "SUB"
+    case "gift_subscription":
+      return "GIFT"
+    case "cheer":
+      return "CHEER"
+    case "hype_chat":
+      return "HYPE CHAT"
+  }
 }

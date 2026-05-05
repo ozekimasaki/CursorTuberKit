@@ -1,22 +1,22 @@
 # Catlin Streaming Avatar
 
-`maid_cat.svg` を使った配信用の Web アバターです。ブラウザ上では、月灯りのティーサロンから来たメイド猫アシスタント **キャットリン** を表示し、Cursor または Gemini から返ってくる AI 応答を字幕表示し、VOICEVOX 音声の再生に合わせて顔と口が動きます。
+`maid_cat.svg` を使った配信用の Web アバターです。ブラウザ上では、月灯りのティーサロンから来た、みずから配信を行うメイド猫の AI キャラクター **キャットリン** を表示し、Cursor または Gemini から返ってくる AI 応答を字幕表示し、VOICEVOX 音声の再生に合わせて顔と口が動きます。
 
 ## Character concept
 
 - 名前: キャットリン / Catlin
-- 役割: 配信者と視聴者の空気を整えるメイド猫の配信アシスタント
+- 役割: みずから配信を行い、視聴者に語りかけるメイド猫の AI キャラクター
 - 性格: 上品で気配り上手。少し小悪魔ですが、最後はちゃんと甘やかしてくれます
 - 話し方: 日本語で自然に親しみやすく、字幕で読みやすい短めの返答
 
 ## Requirements
 
 - Devbox
-- Python 3.9+ と `memkraft`
 - Podman または Docker
+- Python 3.9+ と `memkraft`（`MEMKRAFT_EXECUTION_MODE=local` を使う場合のみ）
 - Cursor API key または Google AI Studio API key
 
-Node.js 22 と Bun 1.3 は Devbox で管理できます。runtime/package manager は Node.js, Bun, pnpm, Deno に対応し、Devbox は最速な Bun 経路をそのまま使えるようにしています。Deno は Devbox の同梱対象ではないため、`deno task` を使う場合は別途 Deno 本体をインストールしてください。キャラクターの発話連続性には MemKraft を使うため、Python 3.9+ と `memkraft` の導入も必要です。
+Node.js 22 と Bun 1.3 は Devbox で管理できます。runtime/package manager は Node.js, Bun, pnpm, Deno に対応し、Devbox は最速な Bun 経路をそのまま使えるようにしています。Deno は Devbox の同梱対象ではないため、`deno task` を使う場合は別途 Deno 本体をインストールしてください。キャラクターの発話連続性には MemKraft を使い、**デフォルトでは Podman/Docker 上の helper container** を起動します。ローカル Python + `memkraft` は `MEMKRAFT_EXECUTION_MODE=local` を明示した場合の代替経路です。
 VOICEVOX ENGINE は Devbox コマンドから Podman/Docker コンテナとして起動します。コンテナランタイム自体はホスト側で利用可能になっている必要があります。
 
 `AI_PROVIDER=cursor` の場合は Cursor integrations dashboard で API key を作成し、`CURSOR_API_KEY` として設定してください。`AI_PROVIDER=gemini` の場合は Google AI Studio の API key を `GOOGLE_API_KEY` として設定してください。いずれの API key も Node.js サーバーだけで使用され、ブラウザには送信されません。
@@ -27,9 +27,10 @@ Cursor プロバイダは `@cursor/sdk` の native dependency を使うため、
 
 ```bash
 devbox run install
-python3 -m pip install memkraft
 cp .env.example .env
 ```
+
+MemKraft はデフォルトでコンテナ起動なので、このまま `devbox run dev` や `devbox run memkraft:start` で helper image を自動ビルドして起動できます。ローカル Python を使いたい場合だけ、追加で `python3 -m pip install memkraft` を実行して `.env` に `MEMKRAFT_EXECUTION_MODE=local` を入れてください。
 
 以前に Aube で依存を入れていた場合や、`libstdc++.so.6: cannot open shared object file` が出る場合は、一度 `node_modules` を消して Bun で入れ直してください。
 
@@ -47,11 +48,18 @@ CURSOR_API_KEY=crsr_your_api_key_here
 CURSOR_MODEL=composer-2
 GOOGLE_API_KEY=your_google_ai_studio_api_key_here
 GEMINI_MODEL=gemini-3.1-flash-lite-preview
+KICK_CLIENT_ID=
+KICK_CLIENT_SECRET=
 PORT=8787
 MEMKRAFT_DIR=./memory
+MEMKRAFT_EXECUTION_MODE=container
 MEMKRAFT_PYTHON_BIN=python3
 MEMKRAFT_AGENT_ID=catlin
 MEMKRAFT_CHANNEL_ID=catlin-global
+MEMKRAFT_CONTAINER_RUNTIME=podman
+MEMKRAFT_CONTAINER_NAME=maid-cat-memkraft
+MEMKRAFT_CONTAINER_IMAGE=maid-cat-memkraft:latest
+MEMKRAFT_CONTAINER_WORKDIR=/workspace
 VOICEVOX_URL=http://127.0.0.1:50021
 VOICEVOX_SPEAKER=1
 VOICEVOX_CONTAINER_RUNTIME=podman
@@ -61,7 +69,26 @@ VOICEVOX_PORT=50021
 ```
 
 `AI_PROVIDER` は `cursor` または `gemini` の完全一致で明示設定します。Gemini の既定モデルは `gemini-3.1-flash-lite-preview` で、必要に応じて `GEMINI_MODEL` で変更できます。Cursor を使う場合は `AI_PROVIDER=cursor` と `CURSOR_API_KEY`、Gemini を使う場合は `AI_PROVIDER=gemini` と `GOOGLE_API_KEY` を設定してください。
-MemKraft は初回チャット時に `MEMKRAFT_DIR` 配下を自動初期化し、キャットリン全体で共有する会話連続性メモリを保存します。`MEMKRAFT_PYTHON_BIN` で使用する Python 実行ファイルを明示できます。
+MemKraft は初回チャット時に `MEMKRAFT_DIR` 配下を自動初期化し、キャットリン全体で共有する会話連続性メモリを保存します。**既定値は `MEMKRAFT_EXECUTION_MODE=container`** で、`MEMKRAFT_CONTAINER_RUNTIME` / `MEMKRAFT_CONTAINER_NAME` / `MEMKRAFT_CONTAINER_IMAGE` を使って helper container を切り替えられます。ローカル実行に戻したい場合だけ `MEMKRAFT_EXECUTION_MODE=local` と `MEMKRAFT_PYTHON_BIN` を使います。
+配信コメント連携は YouTube / Twitch / Kick の 3 モードに対応しています。YouTube と Twitch は追加キーなしで接続でき、Kick だけは `KICK_CLIENT_ID` と `KICK_CLIENT_SECRET` が必要です。
+
+## MemKraft container mode
+
+MemKraft はデフォルトでこのモードです。Podman を使う基本設定は以下です。
+
+```bash
+MEMKRAFT_CONTAINER_RUNTIME=podman
+```
+
+このモードでは `server/Containerfile.memkraft` から `memkraft` 入りの helper image をビルドし、会話処理時は `podman exec` / `docker exec` 経由で `memkraft_bridge.py` を実行します。`MEMKRAFT_DIR` はそのままホスト側の `memory/` を bind mount するので、既存データも継続利用できます。
+
+warm-up や状態確認だけ先に行いたい場合:
+
+```bash
+devbox run memkraft:start
+devbox run memkraft:status
+devbox run memkraft:stop
+```
 
 ## VOICEVOX
 
@@ -86,7 +113,7 @@ devbox run voicevox:stop
 devbox run dev
 ```
 
-- `devbox run dev` / `bun run dev` は最初に VOICEVOX ENGINE の起動確認も行います。
+- `devbox run dev` / `bun run dev` は最初に MemKraft helper container の warm-up（container mode 時のみ）と VOICEVOX ENGINE の起動確認を行います。
 - Frontend: Vite dev server
 - Backend: Bun では TypeScript を直接 watch 実行し、npm / pnpm では Node 互換経路で起動
 - Frontend の `/api/*` は backend に proxy されます。
@@ -94,6 +121,14 @@ devbox run dev
 初回だけ VOICEVOX のコンテナイメージ取得に時間がかかるので、先に `devbox run voicevox:start` で warm-up しておくこともできます。
 
 Deno は production-oriented な `build` / `start` のみ対応で、`deno task dev` は用意していません。
+
+## Live chat modes
+
+- `ControlDock` の `Live Chat Mode` から `YouTube / Twitch / Kick` を選び、接続先を入力して接続します。
+- YouTube は配信 URL または `video ID`、Twitch / Kick はチャンネル名を入力します。
+- 受信した視聴者コメントは dock 内の feed に表示され、`自動返答` をオンにすると Catlin が既存の AI + VOICEVOX 経路で順番に返答します。
+- 返答は **アプリ内での字幕表示と音声再生のみ** です。各プラットフォームのチャットへ自動投稿はまだ行いません。
+- monetized event は通常コメントより優先して reply queue に入ります。
 
 ## Production build
 
@@ -147,6 +182,9 @@ devbox run install # bun install
 devbox run dev     # 開発サーバー起動
 devbox run build   # typecheck + frontend/backend build
 devbox run start   # production server 起動
+devbox run memkraft:start  # MemKraft helper container 起動
+devbox run memkraft:status # MemKraft helper container 状態確認
+devbox run memkraft:stop   # MemKraft helper container 停止
 devbox run voicevox:start  # VOICEVOX ENGINE 起動
 devbox run voicevox:status # VOICEVOX ENGINE 状態確認
 devbox run voicevox:stop   # VOICEVOX ENGINE 停止
@@ -157,10 +195,11 @@ devbox run voicevox:stop   # VOICEVOX ENGINE 停止
 - `maid_cat.svg` には目、口、頬、ひげなどのアニメーション用 ID/class を追加しています。
 - React 側では SVG を raw import してインライン表示し、`idle`、`thinking`、`speaking`、`error` の状態 class で制御します。
 - AI 応答は `POST /api/chat/stream` から `text/event-stream` として返ります。
+- live chat mode は backend 側で YouTube / Twitch / Kick の comment source を 1 つだけ有効化し、`/api/platform-chat/stream` で正規化済みイベントを frontend に流します。
 - `/api/chat/stream` はブラウザの recent turns と MemKraft の共有メモリを結合し、キャットリンの発話連続性を保ったプロンプトを組み立てます。
 - AI 応答が完了すると backend が VOICEVOX ENGINE に `audio_query` と `synthesis` を投げ、WAV 音声を生成します。
 - backend の `/api/chat/stream` は `AI_PROVIDER` に応じて Cursor SDK または Gemini SDK を使い分けます。
-- 返答後はユーザー発話とキャットリンの応答を MemKraft に書き戻し、`memory/` 配下の Markdown / `.memkraft` データとして継続コンテキストを蓄積します。
+- 返答後は視聴者コメントとキャットリンの応答を MemKraft に書き戻し、`memory/` 配下の Markdown / `.memkraft` データとして継続コンテキストを蓄積します。
 - Bun 実行時は backend が TypeScript を直接実行し、Node/Deno 互換経路では `dotenv/config` を読み込みます。
 - ブラウザは WAV 音声を再生し、Web Audio の音量解析に合わせて口パクを同期します。
 
@@ -183,9 +222,38 @@ Request:
 Response:
 
 - `event: state` with `thinking`, `speaking`, or `done`
-- `event: text` with streamed assistant text
+- `event: text` with streamed character text
 - `event: error` with an error message
 - `event: done` when complete
+
+### `GET /api/platform-chat/state`
+
+現在の live chat mode 状態と最近受信した視聴者イベント一覧を返します。
+
+### `POST /api/platform-chat/start`
+
+Request:
+
+```json
+{
+  "mode": "youtube",
+  "target": "https://www.youtube.com/watch?v=..."
+}
+```
+
+- `mode`: `youtube` / `twitch` / `kick`
+- `target`: YouTube は配信 URL または video ID、Twitch / Kick はチャンネル名
+
+### `POST /api/platform-chat/stop`
+
+現在の live chat 接続を停止します。
+
+### `GET /api/platform-chat/stream`
+
+live chat mode の server-sent events です。
+
+- `event: state` with current connection state
+- `event: viewer-event` with normalized viewer comment / monetized event
 
 ### `GET /api/voicevox/health`
 
@@ -210,7 +278,9 @@ Response:
 - `VOICEVOX ENGINE is not reachable` と表示される場合は `devbox run voicevox:start` を実行してください。
 - `50021` が使用中の場合は `.env` の `VOICEVOX_PORT` と `VOICEVOX_URL` を変更してください。
 - `AI_PROVIDER=cursor` で `CURSOR_API_KEY` 未設定、または `AI_PROVIDER=gemini` で `GOOGLE_API_KEY` 未設定の場合、`/api/chat/stream` は設定エラーを返します。
-- Python または `memkraft` が未導入の場合、`/api/chat/stream` は MemKraft 設定エラーを返します。`python3 -m pip install memkraft` を実行し、必要なら `MEMKRAFT_PYTHON_BIN` を設定してください。
+- Kick mode で `KICK_CLIENT_ID` または `KICK_CLIENT_SECRET` が未設定の場合、`/api/platform-chat/start` は設定エラーを返します。
+- デフォルトの `MEMKRAFT_EXECUTION_MODE=container` で Podman/Docker が使える場合は、`devbox run memkraft:start` を実行すると helper image を自動ビルドして起動できます。
+- `MEMKRAFT_EXECUTION_MODE=local` で Python または `memkraft` が未導入の場合、`/api/chat/stream` は MemKraft 設定エラーを返します。`python3 -m pip install memkraft` を実行し、必要なら `MEMKRAFT_PYTHON_BIN` を設定してください。
 - Podman が利用できない環境では、`VOICEVOX_CONTAINER_RUNTIME=docker` に変更すると Docker 互換環境で起動できます。
 - Devbox/Nix で入れた rootless Podman は `newuidmap/newgidmap` の setuid/file capabilities が不足して起動できない場合があります。その場合はホスト側の Podman を設定するか Docker を使ってください。
 - ブラウザの自動再生制限により、ページを開いただけでは音声が鳴りません。プロンプト送信ボタンの操作後に再生されます。

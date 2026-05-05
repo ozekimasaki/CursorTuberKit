@@ -9,14 +9,37 @@ from typing import Any
 from memkraft import MemKraft
 
 
+CURRENT_MEMORY_SCHEMA_VERSION = 2
+LEGACY_ASSISTANT_IDENTITY = "キャットリンは月灯りのティーサロンから来たメイド猫の配信アシスタント"
+LEGACY_CONTEXT_MARKERS = (
+    "めいさん",
+    "配信のお手伝い",
+    "そっと横で整え",
+    "配信アシスタント",
+)
+LEGACY_OPERATOR_PROMPTS = (
+    "配信開始の挨拶を、上品でかわいくお願い",
+    "コメント欄が静かなときの場つなぎを考えて",
+    "初見さんを歓迎する一言をやさしく作って",
+    "配信終わりの締めコメントを余韻ありでお願い",
+)
+DEFAULT_CHANNEL_MEMORY = {
+    "continuity_notes": [],
+    "recent_exchanges": [],
+    "running_summary": "",
+    "last_assistant_message": "",
+    "last_user_message": "",
+}
+
 DEFAULT_AGENT_MEMORY = {
+    "memory_schema_version": CURRENT_MEMORY_SCHEMA_VERSION,
     "continuity_goal": "過去のやり取りを踏まえてキャットリンの発話を自然につなげる",
     "continuity_rules": [
         "呼称や距離感を急にリセットしない",
         "直近の話題や雰囲気を優先して拾う",
         "古い記憶より今回の依頼と近い文脈を優先する",
     ],
-    "identity": "キャットリンは月灯りのティーサロンから来たメイド猫の配信アシスタント",
+    "identity": "キャットリンは月灯りのティーサロンから来た、みずから配信を行うメイド猫のAIキャラクター",
 }
 
 
@@ -109,17 +132,75 @@ def main() -> int:
 
 def bootstrap(mk: MemKraft, *, agent_id: str, channel_id: str) -> None:
     mk.init(verbose=False)
-    if not mk.agent_load(agent_id):
+    loaded_agent = mk.agent_load(agent_id)
+    loaded_channel = mk.channel_load(channel_id)
+    agent_data = loaded_agent if isinstance(loaded_agent, dict) else {}
+    channel_data = loaded_channel if isinstance(loaded_channel, dict) else {}
+
+    if should_reset_legacy_memory(agent_data, channel_data):
         mk.agent_save(agent_id, dict(DEFAULT_AGENT_MEMORY))
-    if not mk.channel_load(channel_id):
-        mk.channel_save(
-            channel_id,
-            {
-                "continuity_notes": [],
-                "recent_exchanges": [],
-                "running_summary": "",
-            },
-        )
+        mk.channel_save(channel_id, dict(DEFAULT_CHANNEL_MEMORY))
+        return
+
+    if not agent_data:
+        mk.agent_save(agent_id, dict(DEFAULT_AGENT_MEMORY))
+    else:
+        migrated_agent = migrate_agent_memory(agent_data)
+        if migrated_agent != agent_data:
+            mk.agent_save(agent_id, migrated_agent)
+
+    if not channel_data:
+        mk.channel_save(channel_id, dict(DEFAULT_CHANNEL_MEMORY))
+    else:
+        migrated_channel = migrate_channel_memory(channel_data)
+        if migrated_channel != channel_data:
+            mk.channel_save(channel_id, migrated_channel)
+
+
+def should_reset_legacy_memory(agent_data: dict[str, Any], channel_data: dict[str, Any]) -> bool:
+    identity = agent_data.get("identity")
+    if isinstance(identity, str) and identity.strip() == LEGACY_ASSISTANT_IDENTITY:
+        return True
+    return has_legacy_channel_context(channel_data)
+
+
+def has_legacy_channel_context(channel_data: dict[str, Any]) -> bool:
+    texts = [
+        *normalize_string_list(channel_data.get("continuity_notes")),
+        stringify(channel_data.get("running_summary")),
+        stringify(channel_data.get("last_assistant_message")),
+        stringify(channel_data.get("last_user_message")),
+    ]
+
+    for exchange in normalize_exchanges(channel_data.get("recent_exchanges")):
+        texts.append(exchange["user"])
+        texts.append(exchange["assistant"])
+
+    return any(looks_like_legacy_context(text) for text in texts)
+
+
+def looks_like_legacy_context(text: str) -> bool:
+    normalized = text.strip()
+    if not normalized:
+        return False
+    return any(marker in normalized for marker in LEGACY_CONTEXT_MARKERS) or normalized in LEGACY_OPERATOR_PROMPTS
+
+
+def migrate_agent_memory(agent_data: dict[str, Any]) -> dict[str, Any]:
+    migrated = dict(agent_data)
+    migrated.update(DEFAULT_AGENT_MEMORY)
+    return migrated
+
+
+def migrate_channel_memory(channel_data: dict[str, Any]) -> dict[str, Any]:
+    return {
+        **channel_data,
+        "continuity_notes": [normalize_memory_text(note) for note in normalize_string_list(channel_data.get("continuity_notes"))][-6:],
+        "recent_exchanges": normalize_exchanges(channel_data.get("recent_exchanges")),
+        "running_summary": normalize_memory_text(stringify(channel_data.get("running_summary")).strip()),
+        "last_assistant_message": normalize_memory_text(stringify(channel_data.get("last_assistant_message")).strip()),
+        "last_user_message": stringify(channel_data.get("last_user_message")).strip(),
+    }
 
 
 def read_payload() -> dict[str, Any]:
@@ -148,6 +229,17 @@ def normalize_string_list(value: Any) -> list[str]:
             if normalized:
                 values.append(normalized)
     return values
+
+
+def normalize_memory_text(value: str) -> str:
+    normalized = value.strip()
+    if not normalized:
+        return ""
+    return (
+        normalized.replace(LEGACY_ASSISTANT_IDENTITY, DEFAULT_AGENT_MEMORY["identity"])
+        .replace("ユーザー:", "視聴者:")
+        .replace("ユーザーからの依頼", "今回の視聴者コメント")
+    )
 
 
 def normalize_turns(value: Any) -> list[dict[str, str]]:
@@ -188,7 +280,7 @@ def normalize_exchanges(value: Any) -> list[dict[str, str]]:
 
 
 def build_exchange_note(user_prompt: str, assistant_response: str) -> str:
-    return f"直近では『{clip(user_prompt, 40)}』に対して『{clip(assistant_response, 60)}』と返した"
+    return f"直近では視聴者コメント『{clip(user_prompt, 40)}』に対して『{clip(assistant_response, 60)}』と返した"
 
 
 def build_running_summary(exchanges: list[dict[str, str]]) -> str:
@@ -197,7 +289,7 @@ def build_running_summary(exchanges: list[dict[str, str]]) -> str:
     lines = ["最近の流れ:"]
     for exchange in exchanges[-4:]:
         lines.append(
-            f"- ユーザー: {clip(exchange['user'], 50)} / キャットリン: {clip(exchange['assistant'], 72)}"
+            f"- 視聴者: {clip(exchange['user'], 50)} / キャットリン: {clip(exchange['assistant'], 72)}"
         )
     return "\n".join(lines)
 

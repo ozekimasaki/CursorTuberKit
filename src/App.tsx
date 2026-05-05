@@ -1,9 +1,21 @@
 import { useEffect, useRef, useState } from "react"
 import { characterProfile } from "../shared/characterProfile"
+import {
+  createIdlePlatformChatState,
+  type PlatformChatMode,
+  type PlatformChatState,
+  type PlatformChatStateResponse,
+  type PlatformViewerEvent,
+} from "../shared/platformChat"
 import { ControlDock } from "./components/ControlDock"
 import { MaidCatAvatar, type AvatarState } from "./components/MaidCatAvatar"
 import { playAudioBlob } from "./lib/audioPlayback"
 import { inferEmotionFromText, type Emotion } from "./lib/emotion"
+import {
+  fetchPlatformChatState,
+  startPlatformChat,
+  stopPlatformChat,
+} from "./lib/platformChat"
 import { streamAiResponse, type ConversationTurn } from "./lib/streamAi"
 import type { Viseme } from "./lib/visemes"
 import { fetchVoicevoxHealth, synthesizeVoice, type VoicevoxHealth } from "./lib/voicevox"
@@ -30,7 +42,15 @@ export function App() {
   const [dockOpen, setDockOpen] = useState(true)
   const [dismissedError, setDismissedError] = useState<string | null>(null)
   const [recentTurns, setRecentTurns] = useState<ConversationTurn[]>([])
+  const [platformMode, setPlatformMode] = useState<PlatformChatMode>("youtube")
+  const [platformTarget, setPlatformTarget] = useState("")
+  const [platformState, setPlatformState] = useState<PlatformChatState>(createIdlePlatformChatState())
+  const [liveViewerEvents, setLiveViewerEvents] = useState<PlatformViewerEvent[]>([])
+  const [autoReplyEnabled, setAutoReplyEnabled] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
+  const autoReplyEnabledRef = useRef(autoReplyEnabled)
+  const autoReplyBusyRef = useRef(false)
+  const autoReplyQueueRef = useRef<PlatformViewerEvent[]>([])
 
   useEffect(() => {
     if (typeof document === "undefined") return
@@ -54,11 +74,81 @@ export function App() {
     return () => abortController.abort()
   }, [])
 
-  async function handlePrompt(prompt: string) {
+  useEffect(() => {
+    autoReplyEnabledRef.current = autoReplyEnabled
+
+    if (!autoReplyEnabled) {
+      autoReplyQueueRef.current = []
+      return
+    }
+
+    void pumpAutoReplyQueue()
+  }, [autoReplyEnabled])
+
+  useEffect(() => {
+    const abortController = new AbortController()
+
+    fetchPlatformChatState(abortController.signal)
+      .then(applyPlatformChatStateResponse)
+      .catch(() => {
+        // ignore initial fetch failures and let SSE retry path recover
+      })
+
+    return () => abortController.abort()
+  }, [])
+
+  useEffect(() => {
+    const eventSource = new EventSource("/api/platform-chat/stream")
+
+    const handleState = (event: Event) => {
+      const nextState = readSseData<PlatformChatState>(event)
+
+      if (nextState) {
+        setPlatformState(nextState)
+
+        if (nextState.mode) {
+          setPlatformMode(nextState.mode)
+        }
+
+        if (nextState.target) {
+          setPlatformTarget(nextState.target)
+        }
+
+        if (nextState.status === "idle") {
+          autoReplyQueueRef.current = []
+        }
+      }
+    }
+
+    const handleViewerEvent = (event: Event) => {
+      const viewerEvent = readSseData<PlatformViewerEvent>(event)
+
+      if (!viewerEvent) {
+        return
+      }
+
+      setLiveViewerEvents((current) => insertViewerEvent(current, viewerEvent))
+
+      if (autoReplyEnabledRef.current) {
+        enqueueAutoReplyEvent(viewerEvent)
+      }
+    }
+
+    eventSource.addEventListener("state", handleState as EventListener)
+    eventSource.addEventListener("viewer-event", handleViewerEvent as EventListener)
+
+    return () => {
+      eventSource.removeEventListener("state", handleState as EventListener)
+      eventSource.removeEventListener("viewer-event", handleViewerEvent as EventListener)
+      eventSource.close()
+    }
+  }, [])
+
+  async function runPrompt(prompt: string, options?: { interruptCurrent?: boolean }) {
     const trimmedPrompt = prompt.trim()
 
     if (!trimmedPrompt) {
-      setErrorMessage("プロンプトを入力してください。")
+      showError("プロンプトを入力してください。")
       setEmotion("neutral")
       setStatus("error")
       setAvatarState("error")
@@ -66,12 +156,20 @@ export function App() {
       return
     }
 
-    abortRef.current?.abort()
+    const interruptCurrent = options?.interruptCurrent ?? true
+
+    if (!interruptCurrent && abortRef.current) {
+      return
+    }
+
+    if (interruptCurrent) {
+      abortRef.current?.abort()
+    }
 
     const abortController = new AbortController()
     abortRef.current = abortController
     setResponseText("")
-    setErrorMessage(null)
+    clearError()
     setEmotion("neutral")
     setStatus("thinking")
     setAvatarState("thinking")
@@ -95,7 +193,7 @@ export function App() {
 
       speechError = error instanceof Error ? error : new Error("VOICEVOX音声の処理に失敗しました。")
       audioQueue.length = 0
-      setErrorMessage(speechError.message)
+      showError(speechError.message)
       setEmotion("neutral")
       setStatus("error")
       setAvatarState("error")
@@ -313,7 +411,7 @@ export function App() {
       }
 
       const message = error instanceof Error ? error.message : "AI応答の取得に失敗しました。"
-      setErrorMessage(message)
+      showError(message)
       setEmotion("neutral")
       setStatus("error")
       setAvatarState("error")
@@ -322,6 +420,56 @@ export function App() {
       if (abortRef.current === abortController) {
         abortRef.current = null
       }
+
+      if (autoReplyEnabledRef.current) {
+        void pumpAutoReplyQueue()
+      }
+    }
+  }
+
+  async function handlePrompt(prompt: string) {
+    await runPrompt(prompt, { interruptCurrent: true })
+  }
+
+  async function handlePlatformStart() {
+    const target = platformTarget.trim()
+
+    if (!target) {
+      showError("接続先のURLまたはチャンネル名を入力してください。")
+      return
+    }
+
+    setPlatformState((current) => ({
+      ...current,
+      lastError: null,
+      mode: platformMode,
+      status: "connecting",
+      target,
+      updatedAt: new Date().toISOString(),
+    }))
+
+    try {
+      applyPlatformChatStateResponse(await startPlatformChat({ mode: platformMode, target }))
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "配信コメント接続の開始に失敗しました。"
+      showError(message)
+      setPlatformState((current) => ({
+        ...current,
+        lastError: message,
+        status: "error",
+        updatedAt: new Date().toISOString(),
+      }))
+    }
+  }
+
+  async function handlePlatformStop() {
+    autoReplyQueueRef.current = []
+
+    try {
+      applyPlatformChatStateResponse(await stopPlatformChat())
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "配信コメント接続の停止に失敗しました。"
+      showError(message)
     }
   }
 
@@ -334,12 +482,60 @@ export function App() {
     setViseme("closed")
   }
 
-  const promptSuggestions = [
-    "配信開始の挨拶を、上品でかわいくお願い",
-    "コメント欄が静かなときの場つなぎを考えて",
-    "初見さんを歓迎する一言をやさしく作って",
-    "配信終わりの締めコメントを余韻ありでお願い",
-  ]
+  function showError(message: string) {
+    setDismissedError(null)
+    setErrorMessage(message)
+  }
+
+  function clearError() {
+    setErrorMessage(null)
+    setDismissedError(null)
+  }
+
+  function applyPlatformChatStateResponse(payload: PlatformChatStateResponse) {
+    setPlatformState(payload.state)
+    setLiveViewerEvents(payload.recentEvents.slice(0, 12))
+
+    if (payload.state.mode) {
+      setPlatformMode(payload.state.mode)
+    }
+
+    if (payload.state.target) {
+      setPlatformTarget(payload.state.target)
+    }
+  }
+
+  function enqueueAutoReplyEvent(event: PlatformViewerEvent) {
+    autoReplyQueueRef.current = event.isMonetized
+      ? [event, ...autoReplyQueueRef.current.filter((item) => item.id !== event.id)]
+      : [...autoReplyQueueRef.current.filter((item) => item.id !== event.id), event]
+
+    void pumpAutoReplyQueue()
+  }
+
+  async function pumpAutoReplyQueue() {
+    if (!autoReplyEnabledRef.current || autoReplyBusyRef.current || abortRef.current) {
+      return
+    }
+
+    const nextEvent = autoReplyQueueRef.current.shift()
+
+    if (!nextEvent) {
+      return
+    }
+
+    autoReplyBusyRef.current = true
+
+    try {
+      await runPrompt(buildAutoReplyPrompt(nextEvent), { interruptCurrent: false })
+    } finally {
+      autoReplyBusyRef.current = false
+
+      if (autoReplyEnabledRef.current && autoReplyQueueRef.current.length > 0) {
+        void pumpAutoReplyQueue()
+      }
+    }
+  }
 
   const visibleError = errorMessage && errorMessage !== dismissedError ? errorMessage : null
 
@@ -351,8 +547,12 @@ export function App() {
       >
         <div className="stage__backdrop" aria-hidden="true" />
         <div className="stage__grid" aria-hidden="true" />
-        <div className="stage__avatar">
-          <MaidCatAvatar emotion={emotion} state={avatarState} viseme={viseme} />
+        <div className="stage__horizon" aria-hidden="true" />
+        <div className="stage__aura" aria-hidden="true" />
+        <div className="stage__avatar-shell">
+          <div className="stage__avatar">
+            <MaidCatAvatar emotion={emotion} state={avatarState} viseme={viseme} />
+          </div>
         </div>
       </section>
 
@@ -374,24 +574,6 @@ export function App() {
           {voiceEnabled ? "🔊" : "🔇"}
         </button>
       </header>
-
-      <aside className="quick-chips" aria-label="クイックプロンプト">
-        <p className="quick-chips__label">Quick Prompts</p>
-        {promptSuggestions.map((s) => (
-          <button
-            key={s}
-            type="button"
-            className="chip"
-            disabled={status === "thinking" || status === "synthesizing" || status === "playing"}
-            onClick={() => {
-              setDockOpen(true)
-              handlePrompt(s)
-            }}
-          >
-            {s}
-          </button>
-        ))}
-      </aside>
 
       <section className="caption" aria-live="polite" aria-label="ライブキャプション">
         <div className="caption__head">
@@ -429,7 +611,7 @@ export function App() {
           aria-label="操作ドックを開く"
         >
           <span aria-hidden="true">💬</span>
-          <span>話しかける</span>
+          <span>コメント</span>
         </button>
       )}
 
@@ -443,6 +625,16 @@ export function App() {
         status={status}
         voiceEnabled={voiceEnabled}
         voicevoxHealth={voicevoxHealth}
+        platformMode={platformMode}
+        platformTarget={platformTarget}
+        platformState={platformState}
+        liveViewerEvents={liveViewerEvents}
+        autoReplyEnabled={autoReplyEnabled}
+        onAutoReplyEnabledChange={setAutoReplyEnabled}
+        onPlatformModeChange={setPlatformMode}
+        onPlatformStart={handlePlatformStart}
+        onPlatformStop={handlePlatformStop}
+        onPlatformTargetChange={setPlatformTarget}
         onVoiceEnabledChange={setVoiceEnabled}
       />
     </>
@@ -502,5 +694,54 @@ function extractSpeechSegments(text: string, options?: { force?: boolean }) {
   return {
     segments: segments.filter(Boolean),
     remainder: remaining,
+  }
+}
+
+function insertViewerEvent(current: PlatformViewerEvent[], next: PlatformViewerEvent) {
+  return [next, ...current.filter((event) => event.id !== next.id)].slice(0, 12)
+}
+
+function buildAutoReplyPrompt(event: PlatformViewerEvent) {
+  const monetizationText = event.monetization?.amountText ? ` / ${event.monetization.amountText}` : ""
+  const eventKindLabel = describeEventKind(event)
+
+  return [
+    `配信中の視聴者コメントです。${event.authorName}さんが ${event.platform} で送ってくれました。`,
+    `種別: ${eventKindLabel}${monetizationText}`,
+    `コメント: ${event.text}`,
+    "Catlin本人として、そのまま配信で話す感じで自然に返事してください。",
+  ].join("\n")
+}
+
+function describeEventKind(event: PlatformViewerEvent) {
+  switch (event.kind) {
+    case "comment":
+      return "通常コメント"
+    case "superchat":
+      return "スーパーチャット"
+    case "paid_sticker":
+      return "有料スタンプ"
+    case "membership":
+      return "メンバー加入"
+    case "subscription":
+      return "サブスク"
+    case "gift_subscription":
+      return "ギフトサブスク"
+    case "cheer":
+      return "Cheer"
+    case "hype_chat":
+      return "Hype Chat"
+  }
+}
+
+function readSseData<T>(event: Event) {
+  if (!(event instanceof MessageEvent) || typeof event.data !== "string") {
+    return null
+  }
+
+  try {
+    return JSON.parse(event.data) as T
+  } catch {
+    return null
   }
 }

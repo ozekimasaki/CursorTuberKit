@@ -8,6 +8,9 @@
       "build": "bun run build",
       "start": "bun run start",
       "typecheck": "bun run typecheck",
+      "memkraft:start": "bun run memkraft:start",
+      "memkraft:status": "bun run memkraft:status",
+      "memkraft:stop": "bun run memkraft:stop",
       "voicevox:start": "bun run voicevox:start",
       "voicevox:status": "bun run voicevox:status",
       "voicevox:stop": "bun run voicevox:stop"
