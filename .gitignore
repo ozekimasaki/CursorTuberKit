@@ -8,4 +8,5 @@ dist/
 .DS_Store
 memory/
 .cursor/hook-state/
+.cursor/runtime/
 .cursor/tmp-max-response.json
