@@ -1,0 +1,3 @@
+[submodule "vendor/MotionPNGTuber_Player"]
+	path = vendor/MotionPNGTuber_Player
+	url = https://github.com/rotejin/MotionPNGTuber_Player.git

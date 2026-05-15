@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { type ChangeEvent, useEffect, useMemo, useRef, useState } from "react"
 import {
   type AutomationAction,
   type AutomationEnvelope,
@@ -17,8 +17,17 @@ import {
 } from "../shared/platformChat"
 import { ControlDock } from "./components/ControlDock"
 import { MaidCatAvatar, type AvatarState } from "./components/MaidCatAvatar"
+import { MotionPngAvatar, type MotionPngAvatarHandle } from "./components/MotionPngAvatar"
 import { ViewerEventFeed } from "./components/ViewerEventFeed"
 import { playAudioBlob } from "./lib/audioPlayback"
+import {
+  defaultMotionPngAssetStatus,
+  defaultMotionPngSettings,
+  type AvatarMode,
+  type MotionPngAssetStatus,
+  type MotionPngAudioAnalysis,
+  type MotionPngSettings,
+} from "./lib/avatarConfig"
 import { deriveCharacterContentSurface } from "./lib/contentSurface"
 import { inferEmotionFromText } from "./lib/emotion"
 import {
@@ -46,12 +55,20 @@ const stageStatusLabel: Record<StreamStatus, string> = {
   error: "エラー",
 }
 
-const QUEUED_PLAYBACK_GAP_MS = 1000
-const AUTO_CONTENT_OPENING_DELAY_MS = 3000
-const AUTO_CONTENT_VIEWER_FOLLOWUP_DELAY_MS = 12000
-const AUTO_CONTENT_MINI_CORNER_DELAY_MS = 26000
-const AUTO_CONTENT_RECAP_DELAY_MS = 34000
-const AUTO_CONTENT_TEASER_DELAY_MS = 42000
+const QUEUED_PLAYBACK_GAP_MS = 350
+const MAX_QUEUED_VIEWER_EVENTS = 12
+const MAX_AUTO_REPLY_RETRY_ATTEMPTS = 2
+const MAX_CONCURRENT_AUTO_REPLY_GENERATIONS = 2
+const COMPACT_REPLY_TRIGGER_COUNT = 6
+const COMPACT_REPLY_BATCH_SIZE = 6
+const AUTO_REPLY_BRIDGE_DELAY_MS = 1200
+const AUTO_REPLY_BRIDGE_TEXT = "コメント順番に読んでいくね。"
+const AUTO_CONTENT_OPENING_DELAY_MS = 250
+const AUTO_CONTENT_VIEWER_FOLLOWUP_DELAY_MS = 900
+const AUTO_CONTENT_MINI_CORNER_DELAY_MS = 1500
+const AUTO_CONTENT_RECAP_DELAY_MS = 2200
+const AUTO_CONTENT_TEASER_DELAY_MS = 3000
+const AUTO_CONTENT_PREFETCH_DELAY_MS = 250
 
 type AutomaticContentCandidate = {
   anchor: string
@@ -74,9 +91,9 @@ type PreparedAutoReply = {
   isMonetized: boolean
   moderation: ModerationAssessment | null
   responseText: string
+  sequence: number
+  source: "content" | "viewer"
 }
-
-export type PendingAutomationReply = PreparedAutoReply
 
 export type RuntimeTone = "active" | "error" | "muted" | "ok" | "warn"
 
@@ -198,7 +215,6 @@ function describeRuntimeDisplay(
   options?: {
     autoReplyEnabled: boolean
     nextAutomaticContentCandidate: AutomaticContentCandidate | null
-    pendingAutomationCount: number
     platformState: PlatformChatState
     recentViewerEventCount: number
   },
@@ -256,18 +272,9 @@ function describeRuntimeDisplay(
 
 function describeAutopilotReadyDisplay(options: {
   nextAutomaticContentCandidate: AutomaticContentCandidate | null
-  pendingAutomationCount: number
   platformState: PlatformChatState
   recentViewerEventCount: number
 }) {
-  if (options.pendingAutomationCount > 0) {
-    return {
-      detail: `${options.pendingAutomationCount} 件の automation reply が承認待ちです。`,
-      label: "承認待ち",
-      tone: "warn" as const,
-    }
-  }
-
   if (options.nextAutomaticContentCandidate) {
     return {
       detail: options.nextAutomaticContentCandidate.reason,
@@ -334,9 +341,11 @@ function toneFromRuntimeStatus(status: string | null): RuntimeTone {
 }
 
 export function App() {
+  const [avatarMode, setAvatarMode] = useState<AvatarMode>("svg")
   const [avatarState, setAvatarState] = useState<AvatarState>("idle")
   const [status, setStatus] = useState<StreamStatus>("ready")
   const [responseText, setResponseText] = useState("")
+  const [captionText, setCaptionText] = useState("")
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [emotion, setEmotion] = useState<Emotion>("neutral")
   const [viseme, setViseme] = useState<Viseme>("closed")
@@ -349,7 +358,6 @@ export function App() {
   const [latestRunRecap, setLatestRunRecap] = useState<ChatRunRecap | null>(null)
   const [latestAutomationEnvelope, setLatestAutomationEnvelope] = useState<AutomationEnvelope | null>(null)
   const [latestModeration, setLatestModeration] = useState<ModerationAssessment | null>(null)
-  const [pendingAutomationReplies, setPendingAutomationReplies] = useState<PendingAutomationReply[]>([])
   const [dockOpen, setDockOpen] = useState(true)
   const [streamScreenMode, setStreamScreenMode] = useState(false)
   const [dismissedError, setDismissedError] = useState<string | null>(null)
@@ -359,24 +367,52 @@ export function App() {
   const [platformState, setPlatformState] = useState<PlatformChatState>(createIdlePlatformChatState())
   const [liveViewerEvents, setLiveViewerEvents] = useState<PlatformViewerEvent[]>([])
   const [autoReplyEnabled, setAutoReplyEnabled] = useState(false)
+  const [motionPngAssetStatus, setMotionPngAssetStatus] =
+    useState<MotionPngAssetStatus>(defaultMotionPngAssetStatus)
+  const [motionPngFiles, setMotionPngFiles] = useState<File[]>([])
+  const [motionPngFolderLabel, setMotionPngFolderLabel] = useState<string | null>(null)
+  const [motionPngSettings, setMotionPngSettings] = useState<MotionPngSettings>(defaultMotionPngSettings)
   const abortRef = useRef<AbortController | null>(null)
+  const avatarModeRef = useRef<AvatarMode>(avatarMode)
   const autoReplyEnabledRef = useRef(autoReplyEnabled)
   const recentTurnsRef = useRef<ConversationTurn[]>([])
-  const autoReplyGenerationBusyRef = useRef(false)
+  const autoReplyGenerationCountRef = useRef(0)
   const autoReplyEventQueueRef = useRef<PlatformViewerEvent[]>([])
+  const autoReplyRetryCountsRef = useRef<Map<string, number>>(new Map())
+  const autoReplyRetryTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
+  const autoReplySeenEventIdsRef = useRef<Set<string>>(new Set())
+  const bridgeSpeechCacheRef = useRef<Map<string, Blob>>(new Map())
   const preparedAutoReplyQueueRef = useRef<PreparedAutoReply[]>([])
-  const autoReplyGenerationAbortRef = useRef<AbortController | null>(null)
+  const preparedAutoReplySequenceRef = useRef(0)
+  const preparedAutoReplyPlaybackBusyRef = useRef(false)
+  const autoReplyGenerationAbortControllersRef = useRef<Set<AbortController>>(new Set())
   const autoContentAbortRef = useRef<AbortController | null>(null)
   const autoContentBusyRef = useRef(false)
   const autoContentScheduledKeyRef = useRef<string | null>(null)
   const autoContentExpandedViewerEventsRef = useRef<Set<string>>(new Set())
   const autoContentSequenceRef = useRef(0)
   const autoContentSessionBaseRef = useRef<string | null>(null)
+  const motionPngAvatarRef = useRef<MotionPngAvatarHandle | null>(null)
+  const motionPngFolderInputRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
     if (typeof document === "undefined") return
     document.body.classList.toggle("dock-open", dockOpen)
   }, [dockOpen])
+
+  useEffect(() => {
+    avatarModeRef.current = avatarMode
+  }, [avatarMode])
+
+  useEffect(() => {
+    const input = motionPngFolderInputRef.current
+    if (!input) {
+      return
+    }
+
+    input.setAttribute("webkitdirectory", "")
+    input.setAttribute("directory", "")
+  }, [])
 
   useEffect(() => {
     const abortController = new AbortController()
@@ -417,6 +453,59 @@ export function App() {
     }
   }
 
+  function resetAvatarMouth() {
+    setViseme("closed")
+    motionPngAvatarRef.current?.resetAudio()
+  }
+
+  function handleMotionPngAnalysis(data: MotionPngAudioAnalysis) {
+    if (avatarModeRef.current !== "motionpng") {
+      return
+    }
+
+    motionPngAvatarRef.current?.processAudioData(data)
+  }
+
+  function handleMotionPngAssetStatusChange(status: MotionPngAssetStatus) {
+    setMotionPngAssetStatus(status)
+  }
+
+  function handleMotionPngFolderSelect() {
+    motionPngFolderInputRef.current?.click()
+  }
+
+  function handleMotionPngFolderChange(event: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.target.files ?? [])
+    event.target.value = ""
+
+    if (files.length === 0) {
+      return
+    }
+
+    const folderLabel = deriveMotionPngFolderLabel(files)
+    setMotionPngFiles(files)
+    setMotionPngFolderLabel(folderLabel)
+    setMotionPngAssetStatus({
+      loaded: false,
+      message: `${folderLabel} を読み込んでいます。`,
+      tone: "loading",
+    })
+  }
+
+  function handleMotionPngClear() {
+    motionPngAvatarRef.current?.resetAudio()
+    setMotionPngFiles([])
+    setMotionPngFolderLabel(null)
+    setMotionPngAssetStatus(defaultMotionPngAssetStatus)
+  }
+
+  function updateMotionPngSettings(patch: Partial<MotionPngSettings>) {
+    setMotionPngSettings((current) => ({
+      ...current,
+      ...patch,
+    }))
+  }
+
   useEffect(() => {
     autoReplyEnabledRef.current = autoReplyEnabled
 
@@ -433,6 +522,24 @@ export function App() {
     void pumpAutoReplyGenerationQueue()
     void pumpPreparedAutoReplyQueue()
   }, [autoReplyEnabled])
+
+  useEffect(() => {
+    if (!autoReplyEnabled || !voiceEnabled || bridgeSpeechCacheRef.current.has(AUTO_REPLY_BRIDGE_TEXT)) {
+      return
+    }
+
+    const abortController = new AbortController()
+
+    synthesizeVoice(AUTO_REPLY_BRIDGE_TEXT, abortController.signal)
+      .then((wav) => {
+        bridgeSpeechCacheRef.current.set(AUTO_REPLY_BRIDGE_TEXT, wav)
+      })
+      .catch(() => {
+        // bridge fallback is best-effort only
+      })
+
+    return () => abortController.abort()
+  }, [autoReplyEnabled, voiceEnabled])
 
   useEffect(() => {
     recentTurnsRef.current = recentTurns
@@ -456,7 +563,21 @@ export function App() {
     autoContentSequenceRef.current = 0
     autoContentExpandedViewerEventsRef.current = new Set()
     autoContentScheduledKeyRef.current = null
+    autoReplySeenEventIdsRef.current = new Set()
   }, [autoReplyEnabled, platformState.mode, platformState.status, platformState.target])
+
+  useEffect(() => {
+    if (!autoReplyEnabled) {
+      return
+    }
+
+    for (const viewerEvent of [...liveViewerEvents].reverse()) {
+      enqueueAutoReplyEvent(viewerEvent)
+    }
+
+    void pumpAutoReplyGenerationQueue()
+    void pumpPreparedAutoReplyQueue()
+  }, [autoReplyEnabled, liveViewerEvents])
 
   useEffect(() => {
     const abortController = new AbortController()
@@ -517,22 +638,34 @@ export function App() {
     }
   }, [])
 
-  async function runPrompt(prompt: string, options?: { interruptCurrent?: boolean }) {
-    const trimmedPrompt = prompt.trim()
+  async function streamPromptReply(options: {
+    automation: ChatAutomationRequest
+    bridgeSpeech?: string
+    interruptCurrent?: boolean
+    onCompletedText?: (assistantText: string) => void
+    prompt: string
+    recentTurns: ConversationTurn[]
+    runtimeActivity?: {
+      detail: string
+      kind: string
+      label: string
+    }
+  }) {
+    const trimmedPrompt = options.prompt.trim()
 
     if (!trimmedPrompt) {
       showError("プロンプトを入力してください。")
       setEmotion("neutral")
       setStatus("error")
       setAvatarState("error")
-      setViseme("closed")
-      return
+      resetAvatarMouth()
+      return { aborted: false, errorMessage: "プロンプトを入力してください。" }
     }
 
-    const interruptCurrent = options?.interruptCurrent ?? true
+    const interruptCurrent = options.interruptCurrent ?? true
 
     if (!interruptCurrent && abortRef.current) {
-      return
+      return { aborted: true, errorMessage: null }
     }
 
     if (interruptCurrent) {
@@ -542,15 +675,25 @@ export function App() {
     const abortController = new AbortController()
     abortRef.current = abortController
     setResponseText("")
+    setCaptionText("")
     clearError()
     setEmotion("neutral")
     setStatus("thinking")
     setAvatarState("thinking")
-    setViseme("closed")
+    resetAvatarMouth()
     setFinalEmotionPayload(null)
     setLatestAutomationEnvelope(null)
     setLatestModeration(null)
-    setRuntimeProgress(createPendingRuntimeProgress())
+    setRuntimeProgress(
+      options.runtimeActivity
+        ? appendRuntimeActivity(createPendingRuntimeProgress(), {
+            detail: options.runtimeActivity.detail,
+            kind: options.runtimeActivity.kind,
+            label: options.runtimeActivity.label,
+            status: "running",
+          })
+        : createPendingRuntimeProgress(),
+    )
     let fullResponseText = ""
     let pendingSpeechText = ""
     let synthesisTail = Promise.resolve()
@@ -559,8 +702,11 @@ export function App() {
     let textStreamCompleted = false
     let pendingSynthesisCount = 0
     let speechError: Error | null = null
+    let firstAudioObserved = false
     let finalEmotion: Emotion | null = null
+    const requestStartedAt = performance.now()
     const audioQueue: Array<{ blob: Blob; emotion: Emotion; text: string }> = []
+    let bridgeRequested = false
 
     const canUpdateSpeechState = () => !speechError && !abortController.signal.aborted
 
@@ -576,7 +722,7 @@ export function App() {
       setEmotion("neutral")
       setStatus("error")
       setAvatarState("error")
-      setViseme("closed")
+      resetAvatarMouth()
       setRuntimeProgress((current) =>
         appendRuntimeActivity(current, {
           detail: speechErrorMessage,
@@ -600,16 +746,17 @@ export function App() {
       if (speechError) {
         setStatus("error")
         setAvatarState("error")
-        setViseme("closed")
+        resetAvatarMouth()
         return
       }
 
-        setStatus("ready")
-        setEmotion(finalEmotion ?? "neutral")
-        setAvatarState("idle")
-        setViseme("closed")
-        setRuntimeProgress((current) => finalizeRuntimeProgress(current))
-      }
+      setCaptionText(fullResponseText.trim())
+      setStatus("ready")
+      setEmotion(finalEmotion ?? "neutral")
+      setAvatarState("idle")
+      resetAvatarMouth()
+      setRuntimeProgress((current) => finalizeRuntimeProgress(current))
+    }
 
     const startPlaybackIfNeeded = () => {
       if (playbackActive || audioQueue.length === 0 || abortController.signal.aborted) {
@@ -633,10 +780,24 @@ export function App() {
             }
 
             await playAudioBlob(next.blob, {
+              onAnalysis: handleMotionPngAnalysis,
               text: next.text,
               signal: abortController.signal,
               onStart: () => {
                 if (canUpdateSpeechState()) {
+                  if (!firstAudioObserved) {
+                    firstAudioObserved = true
+                    const latencyMs = Math.round(performance.now() - requestStartedAt)
+                    setRuntimeProgress((current) =>
+                      appendRuntimeActivity(current, {
+                        detail: `${latencyMs}ms で話し始めました。`,
+                        kind: "latency",
+                        label: "初動レイテンシ",
+                        status: "done",
+                      }),
+                    )
+                  }
+                  setCaptionText(next.text)
                   setEmotion(next.emotion)
                   setStatus("playing")
                   setAvatarState("speaking")
@@ -645,7 +806,7 @@ export function App() {
               onViseme: setViseme,
               onEnded: () => {
                 if (canUpdateSpeechState()) {
-                  setViseme("closed")
+                  resetAvatarMouth()
                 }
               },
               onError: handleSpeechError,
@@ -715,11 +876,47 @@ export function App() {
         })
     }
 
+    const bridgeTimerId =
+      voiceEnabled && options.bridgeSpeech
+        ? window.setTimeout(() => {
+            const bridgeSpeech = options.bridgeSpeech
+
+            if (
+              abortController.signal.aborted ||
+              speechError ||
+              firstAudioObserved ||
+              textStreamCompleted ||
+              bridgeRequested ||
+              !bridgeSpeech
+            ) {
+              return
+            }
+
+            bridgeRequested = true
+            void getCachedBridgeSpeech(bridgeSpeech, abortController.signal)
+              .then((wav) => {
+                if (abortController.signal.aborted || speechError || firstAudioObserved) {
+                  return
+                }
+
+                audioQueue.unshift({
+                  blob: wav,
+                  emotion: "neutral",
+                  text: bridgeSpeech,
+                })
+                startPlaybackIfNeeded()
+              })
+              .catch(() => {
+                // bridge fallback is best-effort only
+              })
+          }, AUTO_REPLY_BRIDGE_DELAY_MS)
+        : null
+
     try {
       for await (const event of streamAiResponse({
-        automation: { source: "manual" },
+        automation: options.automation,
         prompt: trimmedPrompt,
-        recentTurns: recentTurnsRef.current,
+        recentTurns: options.recentTurns,
         signal: abortController.signal,
       })) {
         if (event.type === "moderation") {
@@ -768,6 +965,7 @@ export function App() {
             setAvatarState("thinking")
           }
           setResponseText((current) => current + event.text)
+          setCaptionText((current) => current + event.text)
 
           if (canUpdateSpeechState()) {
             const { remainder, segments } = extractSpeechSegments(pendingSpeechText)
@@ -797,7 +995,7 @@ export function App() {
       const completedAssistantText = fullResponseText.trim()
 
       if (completedAssistantText) {
-        appendRecentTurns(trimmedPrompt, completedAssistantText)
+        options.onCompletedText?.(completedAssistantText)
       }
 
       if (voiceEnabled && fullResponseText.trim() && canUpdateSpeechState()) {
@@ -810,26 +1008,29 @@ export function App() {
         }
 
         finalizeIfDone()
-        return
+        return { aborted: false, errorMessage: null }
       }
 
       if (canUpdateSpeechState()) {
+        setCaptionText(completedAssistantText)
         setEmotion(finalEmotion ?? "neutral")
         setStatus("ready")
         setAvatarState("idle")
-        setViseme("closed")
+        resetAvatarMouth()
         setRuntimeProgress((current) => finalizeRuntimeProgress(current))
       }
+
+      return { aborted: false, errorMessage: null }
     } catch (error) {
       if (abortController.signal.aborted) {
         if (!speechError) {
           setEmotion("neutral")
           setStatus("ready")
           setAvatarState("idle")
-          setViseme("closed")
+          resetAvatarMouth()
           setRuntimeProgress((current) => finalizeRuntimeProgress(current))
         }
-        return
+        return { aborted: true, errorMessage: null }
       }
 
       const message = error instanceof Error ? error.message : "AI応答の取得に失敗しました。"
@@ -837,7 +1038,7 @@ export function App() {
       setEmotion("neutral")
       setStatus("error")
       setAvatarState("error")
-      setViseme("closed")
+      resetAvatarMouth()
       setRuntimeProgress((current) =>
         appendRuntimeActivity(current, {
           detail: message,
@@ -846,7 +1047,12 @@ export function App() {
           status: "error",
         }),
       )
+      return { aborted: false, errorMessage: message }
     } finally {
+      if (bridgeTimerId !== null) {
+        window.clearTimeout(bridgeTimerId)
+      }
+
       if (abortRef.current === abortController) {
         abortRef.current = null
       }
@@ -858,8 +1064,68 @@ export function App() {
     }
   }
 
+  async function runPrompt(prompt: string, options?: { interruptCurrent?: boolean }) {
+    await streamPromptReply({
+      automation: { source: "manual" },
+      interruptCurrent: options?.interruptCurrent ?? true,
+      onCompletedText: (assistantText) => {
+        appendRecentTurns(prompt.trim(), assistantText)
+      },
+      prompt,
+      recentTurns: recentTurnsRef.current,
+    })
+  }
+
+  function shouldStartDirectAutoReply() {
+    return (
+      !abortRef.current &&
+      autoReplyGenerationCountRef.current === 0 &&
+      preparedAutoReplyQueueRef.current.length === 0 &&
+      autoReplyEventQueueRef.current.length === 0
+    )
+  }
+
+  async function streamDirectAutoReply(event: PlatformViewerEvent) {
+    autoReplyRetryCountsRef.current.delete(event.id)
+    clearAutoReplyRetryTimer(event.id)
+
+    const prompt = buildAutoReplyPrompt(event)
+    const result = await streamPromptReply({
+      automation: {
+        replyStyle: "default",
+        source: "platform_auto_reply",
+        target: {
+          platform: event.platform,
+          target: event.target,
+        },
+      },
+      bridgeSpeech: AUTO_REPLY_BRIDGE_TEXT,
+      interruptCurrent: false,
+      onCompletedText: (assistantText) => {
+        appendRecentTurns(prompt, assistantText)
+      },
+      prompt,
+      recentTurns: recentTurnsRef.current,
+      runtimeActivity: {
+        detail: `${event.authorName}さんのコメントへすぐ返します。`,
+        kind: "autoreply",
+        label: "コメント返答をライブ生成中",
+      },
+    })
+
+    if (result.aborted) {
+      autoReplyEventQueueRef.current = insertQueuedViewerEvent(autoReplyEventQueueRef.current, event)
+      void pumpAutoReplyGenerationQueue()
+      return
+    }
+
+    if (result.errorMessage) {
+      scheduleAutoReplyRetry([event], result.errorMessage)
+    }
+  }
+
   async function handlePrompt(prompt: string) {
-    autoReplyGenerationAbortRef.current?.abort()
+    abortAutoReplyGenerations()
     autoContentAbortRef.current?.abort()
     autoContentScheduledKeyRef.current = null
     await runPrompt(prompt, { interruptCurrent: true })
@@ -887,12 +1153,16 @@ export function App() {
     } catch (error) {
       const message = error instanceof Error ? error.message : "配信コメント接続の開始に失敗しました。"
       showError(message)
-      setPlatformState((current) => ({
-        ...current,
-        lastError: message,
-        status: "error",
-        updatedAt: new Date().toISOString(),
-      }))
+      try {
+        applyPlatformChatStateResponse(await fetchPlatformChatState())
+      } catch {
+        setPlatformState((current) => ({
+          ...current,
+          lastError: message,
+          status: "error",
+          updatedAt: new Date().toISOString(),
+        }))
+      }
     }
   }
 
@@ -913,7 +1183,7 @@ export function App() {
     setEmotion("neutral")
     setStatus("ready")
     setAvatarState("idle")
-    setViseme("closed")
+    resetAvatarMouth()
     setRuntimeProgress((current) =>
       appendRuntimeActivity(current, {
         detail: "現在のストリームを停止しました。",
@@ -950,18 +1220,36 @@ export function App() {
   function resetAutoReplyQueues() {
     autoReplyEventQueueRef.current = []
     preparedAutoReplyQueueRef.current = []
-    autoReplyGenerationAbortRef.current?.abort()
+    abortAutoReplyGenerations()
     autoContentAbortRef.current?.abort()
     autoContentScheduledKeyRef.current = null
-    autoReplyGenerationAbortRef.current = null
-    setPendingAutomationReplies([])
+    preparedAutoReplySequenceRef.current = 0
+    autoReplyRetryCountsRef.current.clear()
+    clearAutoReplyRetryTimers()
   }
 
   function clearQueuedViewerReplies() {
     autoReplyEventQueueRef.current = []
-    autoReplyGenerationAbortRef.current?.abort()
-    autoReplyGenerationAbortRef.current = null
-    setPendingAutomationReplies([])
+    abortAutoReplyGenerations()
+    autoReplyRetryCountsRef.current.clear()
+    clearAutoReplyRetryTimers()
+  }
+
+  function abortAutoReplyGenerations() {
+    autoReplyGenerationAbortControllersRef.current.forEach((controller) => controller.abort())
+    autoReplyGenerationAbortControllersRef.current.clear()
+  }
+
+  async function getCachedBridgeSpeech(text: string, signal: AbortSignal) {
+    const cached = bridgeSpeechCacheRef.current.get(text)
+
+    if (cached) {
+      return cached
+    }
+
+    const wav = await synthesizeVoice(text, signal)
+    bridgeSpeechCacheRef.current.set(text, wav)
+    return wav
   }
 
   function appendRecentTurns(userText: string, assistantText: string) {
@@ -990,6 +1278,11 @@ export function App() {
   }
 
   function enqueueAutoReplyEvent(event: PlatformViewerEvent) {
+    if (autoReplySeenEventIdsRef.current.has(event.id)) {
+      return
+    }
+
+    autoReplySeenEventIdsRef.current.add(event.id)
     const triage = assessViewerEventTriage(event)
 
     if (triage.action === "skip") {
@@ -1004,11 +1297,30 @@ export function App() {
       return
     }
 
-    autoReplyEventQueueRef.current = insertQueuedViewerEvent(autoReplyEventQueueRef.current, event)
+    if (shouldStartDirectAutoReply()) {
+      void streamDirectAutoReply(event)
+      return
+    }
+
+    const nextQueue = insertQueuedViewerEvent(autoReplyEventQueueRef.current, event)
+
+    if (!nextQueue.some((item) => item.id === event.id)) {
+      setRuntimeProgress((current) =>
+        appendRuntimeActivity(current, {
+          detail: `${event.authorName}さんのコメントは流量が多いため、より優先度の高いコメントを先に読みます。`,
+          kind: "filter",
+          label: "コメントを優先度で圧縮しました",
+          status: "done",
+        }),
+      )
+      return
+    }
+
+    autoReplyEventQueueRef.current = nextQueue
 
     setRuntimeProgress((current) =>
       appendRuntimeActivity(current, {
-        detail: `${event.authorName}さんのコメントを採択しました。${triage.reason}`,
+        detail: `${event.authorName}さんのコメントを採択しました。${triage.reason} backlog ${nextQueue.length}件です。`,
         kind: "filter",
         label: "コメントを返答候補に追加",
         status: "done",
@@ -1019,42 +1331,91 @@ export function App() {
   }
 
   function enqueuePreparedAutoReply(reply: PreparedAutoReply) {
-    preparedAutoReplyQueueRef.current = reply.isMonetized
-      ? [reply, ...preparedAutoReplyQueueRef.current.filter((item) => item.id !== reply.id)]
-      : [...preparedAutoReplyQueueRef.current.filter((item) => item.id !== reply.id), reply]
-  }
+    autoReplyRetryCountsRef.current.delete(reply.id)
+    clearAutoReplyRetryTimer(reply.id)
+    const nextReplies = [...preparedAutoReplyQueueRef.current.filter((item) => item.id !== reply.id), reply]
+    const sortBySequence = (a: PreparedAutoReply, b: PreparedAutoReply) => a.sequence - b.sequence
+    const monetizedReplies = nextReplies.filter((item) => item.isMonetized).sort(sortBySequence)
+    const viewerReplies = nextReplies
+      .filter((item) => !item.isMonetized && item.source === "viewer")
+      .sort(sortBySequence)
+    const contentReplies = nextReplies
+      .filter((item) => !item.isMonetized && item.source === "content")
+      .sort(sortBySequence)
 
-  function enqueuePendingAutomationReply(reply: PendingAutomationReply) {
-    setPendingAutomationReplies((current) => [reply, ...current.filter((item) => item.id !== reply.id)].slice(0, 8))
+    preparedAutoReplyQueueRef.current = [...monetizedReplies, ...viewerReplies, ...contentReplies]
   }
 
   function shouldAutoPlayPreparedReply(reply: PreparedAutoReply) {
-    if (!reply.action) {
-      return true
-    }
-
-    return (
-      reply.action.executionLevel === "auto_executable" &&
-      reply.action.available &&
-      reply.action.status === "ready"
-    )
+    return true
   }
 
-  function dismissPendingAutomationReply(id: string) {
-    setPendingAutomationReplies((current) => current.filter((item) => item.id !== id))
+  function buildAutoReplyRetryKey(events: PlatformViewerEvent[]) {
+    return events.map((event) => event.id).sort().join("|")
   }
 
-  async function approvePendingAutomationReply(id: string) {
-    const pendingReply = pendingAutomationReplies.find((item) => item.id === id)
+  function scheduleAutoReplyRetry(events: PlatformViewerEvent[], message: string) {
+    const retryKey = buildAutoReplyRetryKey(events)
+    const currentAttempt = autoReplyRetryCountsRef.current.get(retryKey) ?? 0
 
-    if (!pendingReply || (pendingReply.action && (!pendingReply.action.available || pendingReply.action.status !== "ready"))) {
-      dismissPendingAutomationReply(id)
+    if (currentAttempt >= MAX_AUTO_REPLY_RETRY_ATTEMPTS) {
+      autoReplyRetryCountsRef.current.delete(retryKey)
+      clearAutoReplyRetryTimer(retryKey)
+      showError(message)
       return
     }
 
-    dismissPendingAutomationReply(id)
-    enqueuePreparedAutoReply(pendingReply)
-    await pumpPreparedAutoReplyQueue()
+    const nextAttempt = currentAttempt + 1
+    const delayMs = 1_500 * nextAttempt
+    const retrySubject =
+      events.length > 1
+        ? `${events.length}件のコメント`
+        : `${events[0]?.authorName ?? "視聴者"}さんのコメント`
+    autoReplyRetryCountsRef.current.set(retryKey, nextAttempt)
+    clearAutoReplyRetryTimer(retryKey)
+    setRuntimeProgress((current) =>
+      appendRuntimeActivity(current, {
+        detail: `${retrySubject}の返答生成が一時失敗しました。${Math.round(delayMs / 1000)}秒後に再試行します。`,
+        kind: "autoreply",
+        label: "自動返答を再試行します",
+        status: "retrying",
+      }),
+    )
+
+    const timer = setTimeout(() => {
+      autoReplyRetryTimersRef.current.delete(retryKey)
+
+      if (!autoReplyEnabledRef.current) {
+        return
+      }
+
+      let nextQueue = autoReplyEventQueueRef.current
+      for (const event of events) {
+        nextQueue = insertQueuedViewerEvent(nextQueue, event)
+      }
+      autoReplyEventQueueRef.current = nextQueue
+      void pumpAutoReplyGenerationQueue()
+    }, delayMs)
+
+    autoReplyRetryTimersRef.current.set(retryKey, timer)
+  }
+
+  function clearAutoReplyRetryTimer(eventId: string) {
+    const timer = autoReplyRetryTimersRef.current.get(eventId)
+
+    if (!timer) {
+      return
+    }
+
+    clearTimeout(timer)
+    autoReplyRetryTimersRef.current.delete(eventId)
+  }
+
+  function clearAutoReplyRetryTimers() {
+    autoReplyRetryTimersRef.current.forEach((timer) => {
+      clearTimeout(timer)
+    })
+    autoReplyRetryTimersRef.current.clear()
   }
 
   async function triggerAutomaticContentSuggestion(
@@ -1063,10 +1424,7 @@ export function App() {
   ) {
     if (
       !autoReplyEnabledRef.current ||
-      abortRef.current ||
-      autoReplyGenerationBusyRef.current ||
       autoContentBusyRef.current ||
-      autoReplyEventQueueRef.current.length > 0 ||
       preparedAutoReplyQueueRef.current.length > 0
     ) {
       return
@@ -1129,6 +1487,8 @@ export function App() {
         isMonetized: false,
         moderation,
         responseText,
+        sequence: preparedAutoReplySequenceRef.current++,
+        source: "content",
       })
       if (candidate.viewerEventId) {
         autoContentExpandedViewerEventsRef.current.add(candidate.viewerEventId)
@@ -1166,96 +1526,136 @@ export function App() {
   }
 
   async function pumpAutoReplyGenerationQueue() {
-    if (!autoReplyEnabledRef.current || autoReplyGenerationBusyRef.current) {
+    if (!autoReplyEnabledRef.current) {
       return
     }
 
-    const nextEvent = autoReplyEventQueueRef.current.shift()
+    while (
+      autoReplyEnabledRef.current &&
+      autoReplyGenerationCountRef.current < MAX_CONCURRENT_AUTO_REPLY_GENERATIONS
+    ) {
+      const queuedEvents = autoReplyEventQueueRef.current
+      const compactBatch = takeCompactViewerReplyBatch(queuedEvents)
+      const selectedEvents = compactBatch
+        ? compactBatch
+        : queuedEvents[0]
+          ? [queuedEvents[0]]
+          : []
 
-    if (!nextEvent) {
-      return
-    }
-
-    autoReplyGenerationBusyRef.current = true
-    const prompt = buildAutoReplyPrompt(nextEvent)
-    const automationRequest: ChatAutomationRequest = {
-      source: "platform_auto_reply",
-      target: {
-        platform: nextEvent.platform,
-        target: nextEvent.target,
-      },
-    }
-    const abortController = new AbortController()
-    autoReplyGenerationAbortRef.current = abortController
-
-    try {
-      const {
-        action,
-        automationEnvelope,
-        finalEmotion,
-        emotionPayload,
-        latestRunRecap,
-        moderation,
-        providerMetadata,
-        responseText,
-        sessionMetadata,
-      } = await generatePromptResponse(
-        prompt,
-        recentTurnsRef.current,
-        abortController.signal,
-        automationRequest,
-      )
-      if (providerMetadata) {
-        setProviderMetadata(providerMetadata)
-      }
-      if (sessionMetadata) {
-        setSessionMetadata(sessionMetadata)
-      }
-      if (emotionPayload) {
-        setFinalEmotionPayload(emotionPayload)
-      }
-      if (latestRunRecap) {
-        setLatestRunRecap(latestRunRecap)
-      }
-      setLatestAutomationEnvelope(automationEnvelope)
-      if (moderation) {
-        setLatestModeration(moderation)
-      }
-      appendRecentTurns(prompt, responseText)
-      const preparedReply: PreparedAutoReply = {
-        action,
-        finalEmotion,
-        id: nextEvent.id,
-        isMonetized: nextEvent.isMonetized,
-        moderation,
-        responseText,
+      if (selectedEvents.length === 0) {
+        return
       }
 
-      if (shouldAutoPlayPreparedReply(preparedReply)) {
-        enqueuePreparedAutoReply(preparedReply)
-        void pumpPreparedAutoReplyQueue()
-      } else {
-        enqueuePendingAutomationReply(preparedReply)
+      const selectedEventIds = new Set(selectedEvents.map((event) => event.id))
+      autoReplyEventQueueRef.current = compactBatch
+        ? queuedEvents.filter((event) => !selectedEventIds.has(event.id))
+        : queuedEvents.slice(1)
+
+      autoReplyGenerationCountRef.current += 1
+      const primaryEvent = selectedEvents[0]!
+      const shortReplyMode = compactBatch !== null || shouldUseShortAutoReplyMode(autoReplyEventQueueRef.current.length)
+      const prompt = compactBatch
+        ? buildCompactAutoReplyPrompt(selectedEvents)
+        : buildAutoReplyPrompt(primaryEvent, { shortReply: shortReplyMode })
+      const automationRequest: ChatAutomationRequest = {
+        replyStyle: compactBatch ? "compact" : shortReplyMode ? "short" : "default",
+        source: "platform_auto_reply",
+        target: {
+          platform: primaryEvent.platform,
+          target: primaryEvent.target,
+        },
       }
-    } catch (error) {
-      if (!abortController.signal.aborted && !isAbortError(error)) {
-        showError(error instanceof Error ? error.message : "コメント返答の生成に失敗しました。")
-      }
-    } finally {
-      if (autoReplyGenerationAbortRef.current === abortController) {
-        autoReplyGenerationAbortRef.current = null
+      const retryKey = buildAutoReplyRetryKey(selectedEvents)
+      const abortController = new AbortController()
+      const preparedSequence = preparedAutoReplySequenceRef.current++
+      autoReplyGenerationAbortControllersRef.current.add(abortController)
+
+      if (compactBatch) {
+        setRuntimeProgress((current) =>
+          appendRuntimeActivity(current, {
+            detail: `${selectedEvents.length}件のコメント候補から、AI に今いちばん拾う返答を選ばせます。`,
+            kind: "autoreply",
+            label: "コメント候補を AI 採択中",
+            status: "running",
+          }),
+        )
       }
 
-      autoReplyGenerationBusyRef.current = false
+      void (async () => {
+        try {
+          const {
+            action,
+            automationEnvelope,
+            finalEmotion,
+            emotionPayload,
+            latestRunRecap,
+            moderation,
+            providerMetadata,
+            responseText,
+            sessionMetadata,
+          } = await generatePromptResponse(
+            prompt,
+            recentTurnsRef.current,
+            abortController.signal,
+            automationRequest,
+          )
+          if (providerMetadata) {
+            setProviderMetadata(providerMetadata)
+          }
+          if (sessionMetadata) {
+            setSessionMetadata(sessionMetadata)
+          }
+          if (emotionPayload) {
+            setFinalEmotionPayload(emotionPayload)
+          }
+          if (latestRunRecap) {
+            setLatestRunRecap(latestRunRecap)
+          }
+          setLatestAutomationEnvelope(automationEnvelope)
+          if (moderation) {
+            setLatestModeration(moderation)
+          }
+          appendRecentTurns(prompt, responseText)
+          const preparedReply: PreparedAutoReply = {
+            action,
+            finalEmotion,
+            id: retryKey,
+            isMonetized: selectedEvents.some((event) => event.isMonetized),
+            moderation,
+            responseText,
+            sequence: preparedSequence,
+            source: "viewer",
+          }
 
-      if (autoReplyEnabledRef.current && autoReplyEventQueueRef.current.length > 0) {
-        void pumpAutoReplyGenerationQueue()
-      }
+          if (shouldAutoPlayPreparedReply(preparedReply)) {
+            enqueuePreparedAutoReply(preparedReply)
+            void pumpPreparedAutoReplyQueue()
+          }
+        } catch (error) {
+          if (!abortController.signal.aborted && !isAbortError(error)) {
+            scheduleAutoReplyRetry(
+              selectedEvents,
+              error instanceof Error ? error.message : "コメント返答の生成に失敗しました。",
+            )
+          }
+        } finally {
+          autoReplyGenerationAbortControllersRef.current.delete(abortController)
+          autoReplyGenerationCountRef.current = Math.max(0, autoReplyGenerationCountRef.current - 1)
+
+          if (autoReplyEnabledRef.current && autoReplyEventQueueRef.current.length > 0) {
+            void pumpAutoReplyGenerationQueue()
+          }
+        }
+      })()
     }
   }
 
   async function pumpPreparedAutoReplyQueue() {
-    if (!autoReplyEnabledRef.current || abortRef.current) {
+    if (
+      !autoReplyEnabledRef.current ||
+      abortRef.current ||
+      preparedAutoReplyPlaybackBusyRef.current
+    ) {
       return
     }
 
@@ -1265,11 +1665,26 @@ export function App() {
       return
     }
 
-    await playPreparedAutoReply(nextReply)
+    preparedAutoReplyPlaybackBusyRef.current = true
+
+    try {
+      await playPreparedAutoReply(nextReply)
+    } finally {
+      preparedAutoReplyPlaybackBusyRef.current = false
+
+      if (
+        autoReplyEnabledRef.current &&
+        !abortRef.current &&
+        preparedAutoReplyQueueRef.current.length > 0
+      ) {
+        void pumpPreparedAutoReplyQueue()
+      }
+    }
   }
 
   async function playPreparedAutoReply(reply: PreparedAutoReply) {
     const normalizedResponse = reply.responseText.trim()
+    const replyStartedAt = performance.now()
 
     if (!normalizedResponse) {
       if (autoReplyEnabledRef.current) {
@@ -1281,11 +1696,12 @@ export function App() {
     const abortController = new AbortController()
     abortRef.current = abortController
     setResponseText(normalizedResponse)
+    setCaptionText(normalizedResponse)
     clearError()
     setEmotion("neutral")
     setStatus(voiceEnabled ? "synthesizing" : "ready")
     setAvatarState(voiceEnabled ? "thinking" : "idle")
-    setViseme("closed")
+    resetAvatarMouth()
     setRuntimeProgress(
       appendRuntimeActivity(createIdleRuntimeProgress(), {
         detail: "ライブコメントから用意した返答です。",
@@ -1296,6 +1712,7 @@ export function App() {
     )
 
     if (!voiceEnabled) {
+      setCaptionText(normalizedResponse)
       setEmotion(reply.finalEmotion ?? "neutral")
       setRuntimeProgress((current) => finalizeRuntimeProgress(current))
 
@@ -1314,6 +1731,7 @@ export function App() {
     let playbackActive = false
     let pendingSynthesisCount = 0
     let speechError: Error | null = null
+    let firstAudioObserved = false
     const audioQueue: Array<{ blob: Blob; emotion: Emotion; text: string }> = []
 
     const canUpdateSpeechState = () => !speechError && !abortController.signal.aborted
@@ -1330,7 +1748,7 @@ export function App() {
       setEmotion("neutral")
       setStatus("error")
       setAvatarState("error")
-      setViseme("closed")
+      resetAvatarMouth()
       setRuntimeProgress((current) =>
         appendRuntimeActivity(current, {
           detail: speechErrorMessage,
@@ -1350,14 +1768,15 @@ export function App() {
       if (speechError) {
         setStatus("error")
         setAvatarState("error")
-        setViseme("closed")
+        resetAvatarMouth()
         return
       }
 
+      setCaptionText(normalizedResponse)
       setStatus("ready")
       setEmotion(reply.finalEmotion ?? "neutral")
       setAvatarState("idle")
-      setViseme("closed")
+      resetAvatarMouth()
       setRuntimeProgress((current) => finalizeRuntimeProgress(current))
     }
 
@@ -1383,10 +1802,24 @@ export function App() {
             }
 
             await playAudioBlob(next.blob, {
+              onAnalysis: handleMotionPngAnalysis,
               text: next.text,
               signal: abortController.signal,
               onStart: () => {
                 if (canUpdateSpeechState()) {
+                  if (!firstAudioObserved) {
+                    firstAudioObserved = true
+                    const latencyMs = Math.round(performance.now() - replyStartedAt)
+                    setRuntimeProgress((current) =>
+                      appendRuntimeActivity(current, {
+                        detail: `${latencyMs}ms で再生を開始しました。`,
+                        kind: "latency",
+                        label: "返答初動を計測しました",
+                        status: "done",
+                      }),
+                    )
+                  }
+                  setCaptionText(next.text)
                   setEmotion(next.emotion)
                   setStatus("playing")
                   setAvatarState("speaking")
@@ -1395,7 +1828,7 @@ export function App() {
               onViseme: setViseme,
               onEnded: () => {
                 if (canUpdateSpeechState()) {
-                  setViseme("closed")
+                  resetAvatarMouth()
                 }
               },
               onError: handleSpeechError,
@@ -1521,7 +1954,6 @@ export function App() {
   const runtimeDisplay = describeRuntimeDisplay(status, runtimeProgress, visibleError, {
     autoReplyEnabled,
     nextAutomaticContentCandidate,
-    pendingAutomationCount: pendingAutomationReplies.length,
     platformState,
     recentViewerEventCount: liveViewerEvents.length,
   })
@@ -1530,11 +1962,8 @@ export function App() {
   useEffect(() => {
     if (
       !autoReplyEnabled ||
-      status !== "ready" ||
-      abortRef.current ||
-      autoReplyGenerationBusyRef.current ||
+      (status !== "ready" && status !== "synthesizing" && status !== "playing") ||
       autoContentBusyRef.current ||
-      autoReplyEventQueueRef.current.length > 0 ||
       preparedAutoReplyQueueRef.current.length > 0
     ) {
       autoContentScheduledKeyRef.current = null
@@ -1553,7 +1982,8 @@ export function App() {
     }
 
     autoContentScheduledKeyRef.current = candidateKey
-    const delayMs = automaticContentDelay(nextAutomaticContentCandidate)
+    const delayMs =
+      status === "ready" ? automaticContentDelay(nextAutomaticContentCandidate) : AUTO_CONTENT_PREFETCH_DELAY_MS
     const timeoutId = window.setTimeout(() => {
       if (autoContentScheduledKeyRef.current === candidateKey) {
         autoContentScheduledKeyRef.current = null
@@ -1587,7 +2017,17 @@ export function App() {
         <div className="stage__aura" aria-hidden="true" />
         <div className="stage__avatar-shell">
           <div className="stage__avatar">
-            <MaidCatAvatar emotion={emotion} state={avatarState} viseme={viseme} />
+            {avatarMode === "motionpng" ? (
+              <MotionPngAvatar
+                assetFiles={motionPngFiles}
+                onAssetStatusChange={handleMotionPngAssetStatusChange}
+                ref={motionPngAvatarRef}
+                settings={motionPngSettings}
+                state={avatarState}
+              />
+            ) : (
+              <MaidCatAvatar emotion={emotion} state={avatarState} viseme={viseme} />
+            )}
           </div>
         </div>
       </section>
@@ -1634,8 +2074,8 @@ export function App() {
           </div>
           <span className={`status-pill status-pill--${status}`}>{stageStatusLabel[status]}</span>
         </div>
-        <p className={`caption__text${responseText ? "" : " caption__text--placeholder"}`}>
-          {responseText || characterProfile.idleCaption}
+        <p className={`caption__text${captionText ? "" : " caption__text--placeholder"}`}>
+          {captionText || characterProfile.idleCaption}
         </p>
       </section>
 
@@ -1692,11 +2132,24 @@ export function App() {
         </button>
       )}
 
+      <input
+        ref={motionPngFolderInputRef}
+        hidden
+        multiple
+        onChange={handleMotionPngFolderChange}
+        type="file"
+      />
+
       <ControlDock
+        avatarMode={avatarMode}
         open={dockOpen}
         onClose={() => {
           setDockOpen(false)
         }}
+        onAvatarModeChange={setAvatarMode}
+        onMotionPngClear={handleMotionPngClear}
+        onMotionPngFolderSelect={handleMotionPngFolderSelect}
+        onMotionPngSettingChange={updateMotionPngSettings}
         onStreamScreenModeChange={handleStreamScreenModeChange}
         errorMessage={errorMessage}
         onCancel={handleCancel}
@@ -1717,11 +2170,11 @@ export function App() {
         latestModeration={latestModeration}
         latestAutomationPolicy={latestAutomationEnvelope?.policy ?? platformState.automationPolicy}
         autoReplyEnabled={autoReplyEnabled}
-        pendingAutomationReplies={pendingAutomationReplies}
+        motionPngAssetStatus={motionPngAssetStatus}
+        motionPngFolderLabel={motionPngFolderLabel}
+        motionPngSettings={motionPngSettings}
         streamScreenMode={streamScreenMode}
-        onApprovePendingAutomationReply={approvePendingAutomationReply}
         onAutoReplyEnabledChange={setAutoReplyEnabled}
-        onDismissPendingAutomationReply={dismissPendingAutomationReply}
         onPlatformModeChange={setPlatformMode}
         onPlatformStart={handlePlatformStart}
         onPlatformStop={handlePlatformStop}
@@ -1735,6 +2188,18 @@ export function App() {
 
 function trimRecentTurns(turns: ConversationTurn[]) {
   return turns.slice(-8)
+}
+
+function deriveMotionPngFolderLabel(files: File[]) {
+  const firstPath = files[0]?.webkitRelativePath
+  if (firstPath) {
+    const [folderName] = firstPath.split(/[\\/]/)
+    if (folderName) {
+      return folderName
+    }
+  }
+
+  return "MotionPNGTuber フォルダ"
 }
 
 function extractSpeechSegments(text: string, options?: { force?: boolean }) {
@@ -1869,16 +2334,49 @@ async function generatePromptResponse(
   }
 }
 
-function buildAutoReplyPrompt(event: PlatformViewerEvent) {
+function buildAutoReplyPrompt(
+  event: PlatformViewerEvent,
+  options?: {
+    shortReply?: boolean
+  },
+) {
   const monetizationText = event.monetization?.amountText ? ` / ${event.monetization.amountText}` : ""
   const eventKindLabel = describeEventKind(event)
+  const replyInstruction = options?.shortReply
+    ? "Catlin本人として、そのまま配信で話す感じで、1〜2文の短い返事をすぐ返してください。"
+    : "Catlin本人として、そのまま配信で話す感じで自然に返事してください。"
 
   return [
     `配信中の視聴者コメントです。${event.authorName}さんが ${event.platform} で送ってくれました。`,
     `種別: ${eventKindLabel}${monetizationText}`,
     `コメント: ${event.text}`,
-    "Catlin本人として、そのまま配信で話す感じで自然に返事してください。",
+    replyInstruction,
   ].join("\n")
+}
+
+function buildCompactAutoReplyPrompt(events: PlatformViewerEvent[]) {
+  return [
+    "配信中に続けて届いた複数の視聴者コメントです。",
+    "全部に均等に返さなくてよいですが、圧縮しすぎず、主軸1件に加えて近い話題ならもう1件まで自然に拾ってください。",
+    "無理に全部をまとめず、拾ったコメントの内容がちゃんと残る返しにしてください。",
+    "Catlin本人として、そのまま配信で話せる返答を1〜3文で返してください。",
+    ...events.map((event) => `- ${event.authorName}: ${event.text}`),
+  ].join("\n")
+}
+
+function shouldUseShortAutoReplyMode(queueDepth: number) {
+  return queueDepth >= 3
+}
+
+function takeCompactViewerReplyBatch(queue: PlatformViewerEvent[]) {
+  const first = queue[0]
+
+  if (!first || first.isMonetized || first.kind !== "comment" || queue.length < COMPACT_REPLY_TRIGGER_COUNT) {
+    return null
+  }
+
+  const candidates = queue.filter((event) => !event.isMonetized && event.kind === "comment").slice(0, COMPACT_REPLY_BATCH_SIZE)
+  return candidates.length >= COMPACT_REPLY_TRIGGER_COUNT ? candidates : null
 }
 
 function describeEventKind(event: PlatformViewerEvent) {
@@ -2016,14 +2514,14 @@ function selectAutomaticContentSuggestion(options: {
 
   return {
     anchor: `${options.sessionKey}:sequence:${options.sequence}`,
-    reason:
-      nextSuggestion.id === "recap"
-        ? "いまの流れを一度まとめて、次の雑談へつなぎます。"
-        : nextSuggestion.id === "teaser"
-          ? "次に広げる話題を先回りで差し込み、配信の流れを保ちます。"
-          : latestViewerEvent && options.platformState.status === "connected"
-            ? "コメントが落ち着いたので、そこから自然に小ネタへ広げます。"
-            : "コメントが無くても止まらないよう、自走トークを次へ進めます。",
+      reason:
+        nextSuggestion.id === "recap"
+          ? "いまの流れを一度まとめて、次の雑談へつなぎます。"
+          : nextSuggestion.id === "teaser"
+            ? "次に広げる話題を先回りで差し込み、配信の流れを保ちます。"
+            : latestViewerEvent && options.platformState.status === "connected"
+              ? "コメントを拾い続けながら、流れを切らさないよう小ネタへ広げます。"
+              : "コメントが無くても止まらないよう、自走トークを次へ進めます。",
     source: "autopilot",
     suggestion: nextSuggestion,
   }
@@ -2078,12 +2576,12 @@ function assessViewerEventTriage(event: PlatformViewerEvent): ViewerEventTriageD
   const reasons: string[] = []
 
   if (looksLikeAckComment(normalized)) {
-    score -= 3
+    score -= 1
     reasons.push("相槌・リアクション寄り")
   }
 
   if (looksLikeLaughterOnly(normalized)) {
-    score -= 3
+    score -= 1
     reasons.push("笑い・スタンプ寄り")
   }
 
@@ -2119,14 +2617,16 @@ function assessViewerEventTriage(event: PlatformViewerEvent): ViewerEventTriageD
         score,
       }
     : {
-        action: "skip",
-        reason: reasons[0] ?? "返答優先度が低い短いリアクションです。",
+        action: "queue",
+        reason: reasons[0] ?? "優先度は低めですが、候補として保持します。",
         score,
       }
 }
 
 function insertQueuedViewerEvent(queue: PlatformViewerEvent[], event: PlatformViewerEvent) {
-  return [...queue.filter((item) => item.id !== event.id), event].sort(compareQueuedViewerEvents)
+  return [...queue.filter((item) => item.id !== event.id), event]
+    .sort(compareQueuedViewerEvents)
+    .slice(0, MAX_QUEUED_VIEWER_EVENTS)
 }
 
 function compareQueuedViewerEvents(a: PlatformViewerEvent, b: PlatformViewerEvent) {

@@ -7,16 +7,22 @@ import type {
   PlatformChatState,
   PlatformViewerEvent,
 } from "../../shared/platformChat"
-import { type PendingAutomationReply, type RuntimeTone, type StreamRuntimeActivity, type StreamStatus } from "../App"
+import { type RuntimeTone, type StreamRuntimeActivity, type StreamStatus } from "../App"
+import type { AvatarMode, MotionPngAssetStatus, MotionPngSettings } from "../lib/avatarConfig"
 import type { CharacterContentSurface } from "../lib/contentSurface"
 import { type VoicevoxHealth } from "../lib/voicevox"
 import { ContentSurfacePanel } from "./ContentSurfacePanel"
 import { ViewerEventFeed } from "./ViewerEventFeed"
 
 type ControlDockProps = {
+  avatarMode: AvatarMode
+  onAvatarModeChange: (mode: AvatarMode) => void
   contentSurface: CharacterContentSurface
   open: boolean
   onClose: () => void
+  onMotionPngClear: () => void
+  onMotionPngFolderSelect: () => void
+  onMotionPngSettingChange: (patch: Partial<MotionPngSettings>) => void
   onStreamScreenModeChange: (enabled: boolean) => void
   errorMessage: string | null
   onCancel: () => void
@@ -37,11 +43,11 @@ type ControlDockProps = {
   latestAutomationPolicy: AutomationPolicy
   latestModeration: ModerationAssessment | null
   autoReplyEnabled: boolean
-  pendingAutomationReplies: PendingAutomationReply[]
+  motionPngAssetStatus: MotionPngAssetStatus
+  motionPngFolderLabel: string | null
+  motionPngSettings: MotionPngSettings
   streamScreenMode: boolean
-  onApprovePendingAutomationReply: (id: string) => void
   onAutoReplyEnabledChange: (enabled: boolean) => void
-  onDismissPendingAutomationReply: (id: string) => void
   onPlatformModeChange: (mode: PlatformChatMode) => void
   onPlatformStart: () => void
   onPlatformStop: () => void
@@ -52,9 +58,14 @@ type ControlDockProps = {
 type DockTab = "comments" | "content" | "compose" | "transcript" | "settings"
 
 export function ControlDock({
+  avatarMode,
+  onAvatarModeChange,
   contentSurface,
   open,
   onClose,
+  onMotionPngClear,
+  onMotionPngFolderSelect,
+  onMotionPngSettingChange,
   onStreamScreenModeChange,
   errorMessage,
   onCancel,
@@ -75,11 +86,11 @@ export function ControlDock({
   latestAutomationPolicy,
   latestModeration,
   autoReplyEnabled,
-  pendingAutomationReplies,
+  motionPngAssetStatus,
+  motionPngFolderLabel,
+  motionPngSettings,
   streamScreenMode,
-  onApprovePendingAutomationReply,
   onAutoReplyEnabledChange,
-  onDismissPendingAutomationReply,
   onPlatformModeChange,
   onPlatformStart,
   onPlatformStop,
@@ -146,9 +157,6 @@ export function ControlDock({
         </span>
         <span className={`info-chip info-chip--${autoReplyEnabled ? "ok" : "muted"}`}>
           自動返答 {autoReplyEnabled ? "ON" : "OFF"}
-        </span>
-        <span className={`info-chip info-chip--${pendingAutomationReplies.length > 0 ? "warn" : "muted"}`}>
-          承認待ち {pendingAutomationReplies.length}件
         </span>
       </div>
       <ViewerEventFeed events={liveViewerEvents} />
@@ -303,6 +311,174 @@ export function ControlDock({
           {tab === "settings" && (
             <>
               <div className="card">
+                <p className="card__title">Avatar</p>
+                <div className="field-group">
+                  <label className="field">
+                    <span className="card__key">モデル</span>
+                    <select
+                      className="field__input"
+                      value={avatarMode}
+                      onChange={(e) => onAvatarModeChange(e.target.value as AvatarMode)}
+                    >
+                      <option value="svg">SVG</option>
+                      <option value="motionpng">MotionPNGTuber</option>
+                    </select>
+                  </label>
+                </div>
+                <div className="card__row">
+                  <span className="card__key">状態</span>
+                  <span className={`card__val card__val--${motionPngTone(motionPngAssetStatus)}`}>
+                    {motionPngStatusLabel(motionPngAssetStatus)}
+                  </span>
+                </div>
+                {avatarMode === "motionpng" && (
+                  <>
+                    <div className="composer__actions motionpng-actions">
+                      <button className="btn btn--primary" type="button" onClick={onMotionPngFolderSelect}>
+                        フォルダを選択
+                      </button>
+                      <button
+                        className="btn"
+                        type="button"
+                        onClick={onMotionPngClear}
+                        disabled={!motionPngFolderLabel && !motionPngAssetStatus.message}
+                      >
+                        クリア
+                      </button>
+                    </div>
+                    <div className="card__row">
+                      <span className="card__key">選択中</span>
+                      <span className="card__val">{motionPngFolderLabel ?? "未選択"}</span>
+                    </div>
+                    {motionPngAssetStatus.message && (
+                      <p className={`motionpng-status motionpng-status--${motionPngTone(motionPngAssetStatus)}`}>
+                        {motionPngAssetStatus.message}
+                      </p>
+                    )}
+                    <div className="field-group field-group--motionpng">
+                      <label className="field">
+                        <span className="card__key">感度 {motionPngSettings.sensitivity}</span>
+                        <input
+                          className="field__input field__input--range"
+                          type="range"
+                          min={0}
+                          max={100}
+                          value={motionPngSettings.sensitivity}
+                          onChange={(e) =>
+                            onMotionPngSettingChange({ sensitivity: Number.parseInt(e.target.value, 10) })
+                          }
+                        />
+                      </label>
+                      <label className="field">
+                        <span className="card__key">拡大率 {motionPngSettings.scale.toFixed(2)}x</span>
+                        <input
+                          className="field__input field__input--range"
+                          type="range"
+                          min={0.5}
+                          max={1.8}
+                          step={0.01}
+                          value={motionPngSettings.scale}
+                          onChange={(e) => onMotionPngSettingChange({ scale: Number.parseFloat(e.target.value) })}
+                        />
+                      </label>
+                    </div>
+                    <div className="field-group field-group--motionpng">
+                      <label className="field">
+                        <span className="card__key">横位置 {motionPngSettings.offsetX}px</span>
+                        <input
+                          className="field__input field__input--range"
+                          type="range"
+                          min={-320}
+                          max={320}
+                          step={4}
+                          value={motionPngSettings.offsetX}
+                          onChange={(e) =>
+                            onMotionPngSettingChange({ offsetX: Number.parseInt(e.target.value, 10) })
+                          }
+                        />
+                      </label>
+                      <label className="field">
+                        <span className="card__key">縦位置 {motionPngSettings.offsetY}px</span>
+                        <input
+                          className="field__input field__input--range"
+                          type="range"
+                          min={-320}
+                          max={320}
+                          step={4}
+                          value={motionPngSettings.offsetY}
+                          onChange={(e) =>
+                            onMotionPngSettingChange({ offsetY: Number.parseInt(e.target.value, 10) })
+                          }
+                        />
+                      </label>
+                    </div>
+                    <div className="card__row">
+                      <span className="card__key">HQ Audio</span>
+                      <label className="toggle">
+                        <input
+                          type="checkbox"
+                          checked={motionPngSettings.hqAudioEnabled}
+                          onChange={(e) => onMotionPngSettingChange({ hqAudioEnabled: e.target.checked })}
+                        />
+                        <span className="toggle__slider" />
+                      </label>
+                    </div>
+                    <div className="card__row">
+                      <span className="card__key">クロマキー</span>
+                      <label className="toggle">
+                        <input
+                          type="checkbox"
+                          checked={motionPngSettings.chromaKeyEnabled}
+                          onChange={(e) => onMotionPngSettingChange({ chromaKeyEnabled: e.target.checked })}
+                        />
+                        <span className="toggle__slider" />
+                      </label>
+                    </div>
+                    <div className="field-group field-group--motionpng">
+                      <label className="field">
+                        <span className="card__key">キー色</span>
+                        <input
+                          className="field__input field__input--color"
+                          type="color"
+                          value={motionPngSettings.chromaKeyColor}
+                          onChange={(e) => onMotionPngSettingChange({ chromaKeyColor: e.target.value })}
+                        />
+                      </label>
+                      <label className="field">
+                        <span className="card__key">しきい値 {motionPngSettings.chromaKeyThreshold}</span>
+                        <input
+                          className="field__input field__input--range"
+                          type="range"
+                          min={0}
+                          max={220}
+                          value={motionPngSettings.chromaKeyThreshold}
+                          onChange={(e) =>
+                            onMotionPngSettingChange({ chromaKeyThreshold: Number.parseInt(e.target.value, 10) })
+                          }
+                        />
+                      </label>
+                      <label className="field">
+                        <span className="card__key">フェザー {motionPngSettings.chromaKeyFeather}</span>
+                        <input
+                          className="field__input field__input--range"
+                          type="range"
+                          min={1}
+                          max={120}
+                          value={motionPngSettings.chromaKeyFeather}
+                          onChange={(e) =>
+                            onMotionPngSettingChange({ chromaKeyFeather: Number.parseInt(e.target.value, 10) })
+                          }
+                        />
+                      </label>
+                    </div>
+                    <p className="card__hint">
+                      MotionPNGTuber は folder picker でアセットを読み込みます。動画ベースなので、緑背景などはクロマキーで抜きながら位置とサイズを調整できます。
+                    </p>
+                  </>
+                )}
+              </div>
+
+              <div className="card">
                 <p className="card__title">Live Chat Mode</p>
                 <div className="field-group">
                   <label className="field">
@@ -386,46 +562,8 @@ export function ControlDock({
                   </span>
                 </div>
                 <p className="card__hint">
-                  既定ではアプリ内の読み上げだけを扱い、外部サービスへの自動投稿は行いません。
+                  block 判定以外はアプリ内で自動進行し、外部サービスへの自動投稿はまだ行いません。
                 </p>
-                {pendingAutomationReplies.length > 0 && (
-                  <div className="automation-review-list">
-                    {pendingAutomationReplies.map((reply) => (
-                      <article key={reply.id} className="automation-review-item">
-                        <div className="automation-review-item__head">
-                          <span className="automation-review-item__title">
-                            {reply.action?.title ?? "返答候補"}
-                          </span>
-                          <span className={`info-chip info-chip--${reply.action?.status === "blocked" ? "warn" : "ok"}`}>
-                            {reply.action ? describeAutomationExecutionLevel(reply.action.executionLevel) : "確認待ち"}
-                          </span>
-                        </div>
-                        <p className="automation-review-item__text">{reply.responseText}</p>
-                        <p className="automation-review-item__meta">
-                          {reply.action?.detail ?? formatModerationSummary(reply.moderation)}
-                        </p>
-                        <div className="composer__actions">
-                          {reply.action?.status !== "blocked" && (
-                            <button
-                              className="btn btn--primary"
-                              type="button"
-                              onClick={() => onApprovePendingAutomationReply(reply.id)}
-                            >
-                              {reply.action?.executionLevel === "suggestion_only" ? "手動再生" : "承認して再生"}
-                            </button>
-                          )}
-                          <button
-                            className="btn"
-                            type="button"
-                            onClick={() => onDismissPendingAutomationReply(reply.id)}
-                          >
-                            {reply.action?.status === "blocked" ? "閉じる" : "保留を解除"}
-                          </button>
-                        </div>
-                      </article>
-                    ))}
-                  </div>
-                )}
               </div>
 
               <div className="card">
@@ -536,6 +674,35 @@ function moderationTone(assessment: ModerationAssessment | null) {
       return "warn"
     case "block":
       return "err"
+  }
+}
+
+function motionPngStatusLabel(status: MotionPngAssetStatus) {
+  if (status.tone === "loading") {
+    return "読み込み中"
+  }
+
+  if (status.loaded) {
+    return "読み込み済み"
+  }
+
+  if (status.tone === "error") {
+    return "エラー"
+  }
+
+  return "未設定"
+}
+
+function motionPngTone(status: MotionPngAssetStatus) {
+  switch (status.tone) {
+    case "success":
+      return "ok"
+    case "error":
+      return "err"
+    case "loading":
+      return "warn"
+    default:
+      return "warn"
   }
 }
 

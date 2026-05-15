@@ -1,6 +1,6 @@
 # Catlin Streaming Avatar
 
-`maid_cat.svg` を使った配信用の Web アバターです。ブラウザ上では、月灯りのティーサロンから来た、みずから配信を行うメイド猫の AI キャラクター **キャットリン** を表示し、Cursor または Gemini から返ってくる AI 応答を字幕表示し、VOICEVOX 音声の再生に合わせて顔と口が動きます。
+`maid_cat.svg` または MotionPNGTuber アセットを使った配信用の Web アバターです。ブラウザ上では、月灯りのティーサロンから来た、みずから配信を行うメイド猫の AI キャラクター **キャットリン** を表示し、Cursor から返ってくる AI 応答を字幕表示し、VOICEVOX 音声の再生に合わせて顔と口が動きます。
 
 ## Character concept
 
@@ -14,21 +14,26 @@
 - Devbox
 - Podman または Docker
 - Python 3.9+ と `memkraft`（`MEMKRAFT_EXECUTION_MODE=local` を使う場合のみ）
-- Cursor API key または Google AI Studio API key
+- Cursor API key
 
 Node.js 22 と Bun 1.3 は Devbox で管理できます。runtime/package manager は Node.js, Bun, pnpm, Deno に対応し、Devbox は最速な Bun 経路をそのまま使えるようにしています。Deno は Devbox の同梱対象ではないため、`deno task` を使う場合は別途 Deno 本体をインストールしてください。キャラクターの発話連続性には MemKraft を使い、**デフォルトでは Podman/Docker 上の helper container** を起動します。ローカル Python + `memkraft` は `MEMKRAFT_EXECUTION_MODE=local` を明示した場合の代替経路です。
 VOICEVOX ENGINE は Devbox コマンドから Podman/Docker コンテナとして起動します。コンテナランタイム自体はホスト側で利用可能になっている必要があります。
 
-`AI_PROVIDER=cursor` の場合は Cursor integrations dashboard で API key を作成し、`CURSOR_API_KEY` として設定してください。`AI_PROVIDER=gemini` の場合は Google AI Studio の API key を `GOOGLE_API_KEY` として設定してください。いずれの API key も Node.js サーバーだけで使用され、ブラウザには送信されません。
+Cursor integrations dashboard で API key を作成し、`CURSOR_API_KEY` として設定してください。API key は Node.js サーバーだけで使用され、ブラウザには送信されません。
 
 Cursor プロバイダは `@cursor/sdk` の native dependency を使うため、Bun サーバー上でも内部的には Node.js 補助プロセスで実行します。あわせて project-level の `.cursor/hooks.json` stop hook で返答完了を補助検知し、その後に emotion classifier subagent で最終アバター感情を確定します。
 
 ## Setup
 
 ```bash
+git submodule update --init --recursive
 devbox run install
 cp .env.example .env
 ```
+
+PowerShell では `.env` 作成に `Copy-Item .env.example .env` を使ってください。
+
+`vendor/MotionPNGTuber_Player` は upstream 実装確認用の submodule です。clone 後に `git submodule update --init --recursive` を忘れると MotionPNGTuber 対応の実装参照元が欠けます。
 
 MemKraft はデフォルトでコンテナ起動なので、このまま `devbox run dev` や `devbox run memkraft:start` で helper image を自動ビルドして起動できます。ローカル Python を使いたい場合だけ、追加で `python3 -m pip install memkraft` を実行して `.env` に `MEMKRAFT_EXECUTION_MODE=local` を入れてください。
 
@@ -39,17 +44,16 @@ rm -rf node_modules
 bun install
 ```
 
-`.env` に利用する AI プロバイダと API key を設定します。
+PowerShell では `Remove-Item -Recurse -Force node_modules` を使えます。
+
+`.env` には Cursor 用の設定を入れます。
 
 ```bash
-# choose one
 AI_PROVIDER=cursor
 CURSOR_API_KEY=crsr_your_api_key_here
 CURSOR_MODEL=composer-2
 CURSOR_CHARACTER_MODEL=composer-2
 CURSOR_EMOTION_MODEL=composer-2
-GOOGLE_API_KEY=your_google_ai_studio_api_key_here
-GEMINI_MODEL=gemini-3.1-flash-lite-preview
 KICK_CLIENT_ID=
 KICK_CLIENT_SECRET=
 PORT=8787
@@ -70,7 +74,7 @@ VOICEVOX_IMAGE=docker.io/voicevox/voicevox_engine:cpu-latest
 VOICEVOX_PORT=50021
 ```
 
-`AI_PROVIDER` は `cursor` または `gemini` の完全一致で明示設定します。Gemini の既定モデルは `gemini-3.1-flash-lite-preview` で、必要に応じて `GEMINI_MODEL` で変更できます。Cursor を使う場合は `AI_PROVIDER=cursor` と `CURSOR_API_KEY`、Gemini を使う場合は `AI_PROVIDER=gemini` と `GOOGLE_API_KEY` を設定してください。Cursor の Character Director / Lore Keeper / Relationship Manager / Content Writer 系サブエージェントは既定で **`CURSOR_CHARACTER_MODEL=composer-2`**、final emotion 用サブエージェントは既定で **`CURSOR_EMOTION_MODEL=composer-2`** を使います。
+このプロジェクトは現在 **Cursor 専用** です。`AI_PROVIDER` は `cursor` を指定するか省略してください。`CURSOR_API_KEY` は必須です。Cursor の Character Director / Lore Keeper / Relationship Manager / Content Writer 系サブエージェントは既定で **`CURSOR_CHARACTER_MODEL=composer-2`**、final emotion 用サブエージェントは既定で **`CURSOR_EMOTION_MODEL=composer-2`** を使います。
 MemKraft は初回チャット時に `MEMKRAFT_DIR` 配下を自動初期化し、キャットリン全体で共有する会話連続性メモリを保存します。**既定値は `MEMKRAFT_EXECUTION_MODE=container`** で、`MEMKRAFT_CONTAINER_RUNTIME` / `MEMKRAFT_CONTAINER_NAME` / `MEMKRAFT_CONTAINER_IMAGE` を使って helper container を切り替えられます。ローカル実行に戻したい場合だけ `MEMKRAFT_EXECUTION_MODE=local` と `MEMKRAFT_PYTHON_BIN` を使います。
 配信コメント連携は YouTube / Twitch / Kick の 3 モードに対応しています。YouTube と Twitch は追加キーなしで接続でき、Kick だけは `KICK_CLIENT_ID` と `KICK_CLIENT_SECRET` が必要です。
 
@@ -124,6 +128,14 @@ devbox run dev
 
 Deno は production-oriented な `build` / `start` のみ対応で、`deno task dev` は用意していません。
 
+## MotionPNGTuber
+
+- `Settings > Avatar` から `MotionPNGTuber` を選ぶと、folder picker でアセットフォルダを読み込めます。
+- 読み込み対象は `*_mouthless_h264.mp4`、`mouth_track.json`、`mouth/closed.png`、`mouth/open.png` が必須です。`half.png`、`e.png`、`u.png` は任意です。
+- MotionPNGTuber モードでは `感度`、`HQ Audio`、`クロマキー`、`位置`、`拡大率` を dock から調整できます。
+- ベース動画がグリーンバック等の単色背景なら、`クロマキー` を有効にしてキー色・しきい値・フェザーを合わせてください。
+- 初回実装では SVG と MotionPNGTuber を切り替えられます。MotionPNGTuber のアセット選択はブラウザの folder picker 由来なので、ページ再読み込み後は再選択が必要です。
+
 ## Live chat modes
 
 - `ControlDock` の `Live Chat Mode` から `YouTube / Twitch / Kick` を選び、接続先を入力して接続します。
@@ -143,7 +155,7 @@ devbox run build
 devbox run start
 ```
 
-Production mode では backend が `dist/client` の Web アプリを配信し、`/api/*` で `AI_PROVIDER` に応じた Cursor / Gemini 連携を処理します。
+Production mode では backend が `dist/client` の Web アプリを配信し、`/api/*` で Cursor 連携を処理します。
 
 Bun を直接使う場合:
 
@@ -199,21 +211,22 @@ devbox run voicevox:stop   # VOICEVOX ENGINE 停止
 ## How it works
 
 - `maid_cat.svg` には目、口、頬、ひげなどのアニメーション用 ID/class を追加しています。
-- React 側では SVG を raw import してインライン表示し、`idle`、`thinking`、`speaking`、`error` の状態 class で制御します。
+- React 側では `SVG` と `MotionPNGTuber` を切り替えられます。SVG は raw import をインライン表示し、MotionPNGTuber は folder picker で選んだアセットを video/canvas 合成で再生します。
+- MotionPNGTuber の口パクは `MotionPNGTuber_Player` upstream 実装を参照してローカル wrapper に移した lipsync engine を使い、VOICEVOX 再生中の音声解析値 `rms / low / high` を直接流しています。
 - AI 応答は `POST /api/chat/stream` から `text/event-stream` として返ります。
 - `/api/runtime/status` は最近の chat run 要約、platform chat 状態、character memory artifact 状態、直近の VOICEVOX health を返し、同じ内容を `memory/runtime/status.json` にも書き出します。
 - live chat mode は backend 側で YouTube / Twitch / Kick の comment source を 1 つだけ有効化し、`/api/platform-chat/stream` で正規化済みイベントを frontend に流します。
 - `/api/chat/stream` はブラウザの recent turns と MemKraft の共有メモリを結合し、キャットリンの発話連続性を保ったプロンプトを組み立てます。
 - 同じプロンプト組み立てでは、七つの大罪パラメータ（0-100）を **pre-reply / relationship / segment / memory-write / lore** の内部 hook として適用し、`lust` は配信用の charm / mischievous allure / indulgent pampering として安全に解釈します。
 - Cursor プロバイダでは返答本文の完了後に Character Director / Lore Keeper / Relationship Manager / Content Writer の各 subagent で補助データを整理し、`character-artifacts` SSE と `memory/runtime/character-agents.ndjson` に残します。
-- 補助データと返答本文から lore cards / relationships / stream diary / teaser を永続化し、`memory/entities/lore-cards.json`、`memory/entities/relationships.json`、`memory/live-notes/stream-diary.md`、`memory/live-notes/next-stream-teaser.md`、`memory/runtime/character-artifacts*.json|ndjson` に保存します。Gemini 経路でも同じ保存先へ server-side fallback 要約を書きます。
+- 補助データと返答本文から lore cards / relationships / stream diary / teaser を永続化し、`memory/entities/lore-cards.json`、`memory/entities/relationships.json`、`memory/live-notes/stream-diary.md`、`memory/live-notes/next-stream-teaser.md`、`memory/runtime/character-artifacts*.json|ndjson` に保存します。
 - その後で project stop hook を観測し、emotion classifier subagent で `neutral / joy / anger / sadness / delight` の最終感情を決めて `emotion` SSE として返します。
 - chat stream が完了すると server は軽量 recap を `metadata` SSE と `memory/runtime/chat-runs.ndjson` に残すので、後続の運用 UI やレビュー導線から再利用できます。
 - AI 応答が完了すると backend が VOICEVOX ENGINE に `audio_query` と `synthesis` を投げ、WAV 音声を生成します。
-- backend の `/api/chat/stream` は `AI_PROVIDER` に応じて Cursor SDK または Gemini SDK を使い分けます。
+- backend の `/api/chat/stream` は Cursor SDK を使います。
 - 返答後は視聴者コメントとキャットリンの応答を MemKraft に書き戻し、`memory/` 配下の Markdown / `.memkraft` データとして継続コンテキストを蓄積します。
 - Bun 実行時は backend が TypeScript を直接実行し、Node/Deno 互換経路では `dotenv/config` を読み込みます。
-- ブラウザは WAV 音声を再生し、Web Audio の音量解析に合わせて口パクを同期します。
+- ブラウザは WAV 音声を再生し、Web Audio の音量解析に合わせて SVG viseme と MotionPNGTuber lipsync を同期します。
 
 ## API
 
@@ -297,7 +310,7 @@ Response:
 
 - `VOICEVOX ENGINE is not reachable` と表示される場合は `devbox run voicevox:start` を実行してください。
 - `50021` が使用中の場合は `.env` の `VOICEVOX_PORT` と `VOICEVOX_URL` を変更してください。
-- `AI_PROVIDER=cursor` で `CURSOR_API_KEY` 未設定、または `AI_PROVIDER=gemini` で `GOOGLE_API_KEY` 未設定の場合、`/api/chat/stream` は設定エラーを返します。
+- `CURSOR_API_KEY` が未設定の場合、`/api/chat/stream` は設定エラーを返します。
 - Kick mode で `KICK_CLIENT_ID` または `KICK_CLIENT_SECRET` が未設定の場合、`/api/platform-chat/start` は設定エラーを返します。
 - デフォルトの `MEMKRAFT_EXECUTION_MODE=container` で Podman/Docker が使える場合は、`devbox run memkraft:start` を実行すると helper image を自動ビルドして起動できます。
 - `MEMKRAFT_EXECUTION_MODE=local` で Python または `memkraft` が未導入の場合、`/api/chat/stream` は MemKraft 設定エラーを返します。`python3 -m pip install memkraft` を実行し、必要なら `MEMKRAFT_PYTHON_BIN` を設定してください。

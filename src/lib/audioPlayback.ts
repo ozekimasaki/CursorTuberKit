@@ -1,6 +1,8 @@
 import { textToVisemeSteps, type Viseme, type VisemeStep } from "./visemes"
+import type { MotionPngAudioAnalysis } from "./avatarConfig"
 
 type PlayAudioOptions = {
+  onAnalysis?: (analysis: MotionPngAudioAnalysis) => void
   text?: string
   onEnded: () => void
   onError: (error: Error) => void
@@ -30,6 +32,7 @@ export async function playAudioBlob(blob: Blob, options: PlayAudioOptions): Prom
   let isOpen = false
   let fallbackStartMs = 0
   let fallbackIndex = 0
+  let lowpassState = 0
 
   const visemeSteps: VisemeStep[] = options.text ? textToVisemeSteps(options.text) : []
   const totalWeight = visemeSteps.reduce((acc, step) => acc + step.weight, 0)
@@ -133,6 +136,25 @@ export async function playAudioBlob(blob: Blob, options: PlayAudioOptions): Prom
           return sum + centered * centered
         }, 0) / timeDomainData.length,
       )
+      const sampleRate = audioContext?.sampleRate ?? 48_000
+      const lowAlpha = 1 - Math.exp((-2 * Math.PI * 700) / sampleRate)
+      let lowEnergy = 0
+      let highEnergy = 0
+
+      for (const value of timeDomainData) {
+        const centered = (value - 128) / 128
+        const low = lowpassState + lowAlpha * (centered - lowpassState)
+        lowpassState = low
+        const high = centered - low
+        lowEnergy += low * low
+        highEnergy += high * high
+      }
+
+      options.onAnalysis?.({
+        high: highEnergy / timeDomainData.length,
+        low: lowEnergy / timeDomainData.length,
+        rms,
+      })
       const boosted = Math.max(0, Math.min(1, averageFrequency * 0.8 + rms * 2.4))
       const attack = 0.7
       const release = 0.25

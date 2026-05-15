@@ -188,6 +188,81 @@ button:not(:disabled):hover { transform: translateY(-1px); }
 .avatar { width: 100%; }
 .avatar svg { display: block; width: 100%; height: auto; overflow: visible; }
 
+.avatar--motionpng {
+  position: relative;
+  width: 100%;
+  min-height: min(72vh, 780px);
+}
+
+.motionpng-avatar__transform {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  transform-origin: center;
+}
+
+.motionpng-stage {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: min(80vh, 76vw, 860px);
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: 28px;
+  border: 1px solid rgb(99 230 255 / 24%);
+  background:
+    radial-gradient(circle at top, rgb(255 255 255 / 22%), transparent 54%),
+    rgb(8 17 31 / 8%);
+  box-shadow:
+    0 18px 42px rgb(14 22 42 / 16%),
+    inset 0 0 0 1px rgb(255 255 255 / 10%);
+}
+
+.motionpng-stage--ready {
+  background: transparent;
+  border-color: rgb(99 230 255 / 14%);
+}
+
+.motionpng-stage__source {
+  position: absolute;
+  inset: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.motionpng-stage__video,
+.motionpng-stage__mouth {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  image-rendering: auto;
+}
+
+.motionpng-stage__mouth {
+  pointer-events: none;
+}
+
+.motionpng-stage__placeholder {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  color: rgb(255 255 255 / 88%);
+  text-align: center;
+  line-height: 1.7;
+  font-size: 0.95rem;
+  letter-spacing: 0.02em;
+  background:
+    radial-gradient(circle at center, rgb(99 230 255 / 14%), transparent 54%),
+    linear-gradient(180deg, rgb(15 28 48 / 72%), rgb(15 28 48 / 44%));
+}
+
 /* Avatar SVG group transforms */
 .avatar #head,
 .avatar #left-eye,
@@ -798,6 +873,46 @@ body.dock-open .caption {
   color: var(--text-mute);
   font-size: 0.78rem;
   line-height: 1.6;
+}
+
+.motionpng-actions {
+  margin-top: 12px;
+}
+
+.motionpng-status {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  line-height: 1.6;
+}
+
+.motionpng-status--ok {
+  background: rgb(110 231 163 / 12%);
+  color: #2b8a5d;
+}
+
+.motionpng-status--warn {
+  background: rgb(255 209 102 / 12%);
+  color: #a27d17;
+}
+
+.motionpng-status--err {
+  background: rgb(255 111 138 / 12%);
+  color: #b63d5f;
+}
+
+.field-group--motionpng {
+  margin-top: 12px;
+}
+
+.field__input--range {
+  padding-inline: 0;
+}
+
+.field__input--color {
+  min-height: 44px;
+  padding: 4px;
 }
 
 .runtime-card {
