@@ -1,5 +1,6 @@
 import { ChatClient, type ChatMessage } from "@twurple/chat"
 import type { Listener } from "@d-fischer/typed-event-emitter"
+import { createAllowModerationAssessment } from "../../shared/moderation.js"
 import type { PlatformViewerEvent } from "../../shared/platformChat.js"
 import { PlatformChatSource, asError, normalizePlatformTarget, normalizeViewerText } from "../platformChatSource.js"
 
@@ -213,6 +214,7 @@ function normalizeTwitchMessage(
     id: `twitch:${msg.id}`,
     isMonetized: false,
     kind: "comment",
+    moderation: createAllowModerationAssessment(),
     platform: "twitch",
     receivedAt: msg.date.toISOString(),
     target,
@@ -234,6 +236,7 @@ function createTwitchMonetizedEvent(
     id: `twitch:${eventId}`,
     isMonetized: true,
     kind,
+    moderation: createAllowModerationAssessment(),
     monetization,
     platform: "twitch",
     receivedAt: new Date().toISOString(),

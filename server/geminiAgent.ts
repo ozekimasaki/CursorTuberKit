@@ -20,7 +20,7 @@ export function validateGeminiConfiguration() {
   }
 }
 
-export async function streamGeminiResponse({ compiledPrompt, onText, signal }: StreamAiResponseOptions) {
+export async function streamGeminiResponse({ compiledPrompt, onText, route, signal }: StreamAiResponseOptions) {
   validateGeminiConfiguration()
 
   if (signal.aborted) {
@@ -30,7 +30,7 @@ export async function streamGeminiResponse({ compiledPrompt, onText, signal }: S
   const ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_API_KEY!.trim() })
   const response = await ai.models.generateContentStream({
     contents: compiledPrompt,
-    model: process.env.GEMINI_MODEL?.trim() || "gemini-3.1-flash-lite-preview",
+    model: route.model,
     config: {
       abortSignal: signal,
     },

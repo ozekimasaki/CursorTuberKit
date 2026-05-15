@@ -1,4 +1,7 @@
 import { characterProfile } from "../shared/characterProfile.js"
+import type { ChatMetadataPayload, ChatStreamEvent } from "../shared/chatStream.js"
+import type { FinalEmotionPayload } from "../shared/emotion.js"
+import type { CharacterRuntimeContext } from "./characterState.js"
 
 export type ConversationTurn = {
   role: "assistant" | "user"
@@ -19,11 +22,19 @@ export type MemKraftPromptContext = {
 
 export type StreamAiResponseOptions = {
   compiledPrompt: string
+  onSupportingEvent?: (event: Extract<ChatStreamEvent, { type: "action" | "character-artifacts" | "session" }>) => void
+  onEmotion?: (payload: FinalEmotionPayload) => void
   onText: (text: string) => void
+  route: ChatMetadataPayload
+  session: {
+    browserSessionId: string
+    transport: "cookie"
+  }
   signal: AbortSignal
 }
 
 type BuildAvatarPromptOptions = {
+  characterContext?: CharacterRuntimeContext
   memoryContext?: MemKraftPromptContext
   recentTurns?: ConversationTurn[]
 }
@@ -31,6 +42,7 @@ type BuildAvatarPromptOptions = {
 export function buildAvatarPrompt(userPrompt: string, options: BuildAvatarPromptOptions = {}) {
   const recentTurns = options.recentTurns?.slice(-6) ?? []
   const memoryContext = options.memoryContext
+  const characterContext = options.characterContext
   const sections = [
     `あなたの名前は${characterProfile.name}です。`,
     `あなたは${characterProfile.role}です。`,
@@ -47,6 +59,14 @@ export function buildAvatarPrompt(userPrompt: string, options: BuildAvatarPrompt
     "会話の連続性: 過去の呼称、話題、雰囲気、直前の流れをできる限り保ち、初対面のようにリセットされた返答は避けてください。",
     "過去の記憶は自然に参照しつつ、古い情報よりも今回の依頼と直近のやり取りを優先してください。",
   ]
+
+  if (characterContext) {
+    sections.push(
+      "",
+      characterContext.promptBlock,
+      `キャラクター state signature: ${characterContext.metadata.signature}`,
+    )
+  }
 
   if (memoryContext?.injection) {
     sections.push("", "MemKraft から読み出した継続コンテキスト:", memoryContext.injection)

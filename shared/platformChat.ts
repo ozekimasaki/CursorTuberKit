@@ -1,3 +1,6 @@
+import type { AutomationPolicy } from "./automation.js"
+import type { ModerationAssessment } from "./moderation.js"
+
 export const platformModes = ["youtube", "twitch", "kick"] as const
 
 export type PlatformChatMode = (typeof platformModes)[number]
@@ -25,6 +28,7 @@ export type PlatformViewerEvent = {
   id: string
   isMonetized: boolean
   kind: PlatformViewerEventKind
+  moderation: ModerationAssessment
   monetization?: PlatformViewerEventMonetization
   platform: PlatformChatMode
   receivedAt: string
@@ -36,6 +40,7 @@ export type PlatformChatStatus = "idle" | "connecting" | "connected" | "error"
 
 export type PlatformChatState = {
   autoReplyScope: "in_app_only"
+  automationPolicy: AutomationPolicy
   lastError: string | null
   lastEventAt: string | null
   mode: PlatformChatMode | null
@@ -52,6 +57,11 @@ export type PlatformChatStateResponse = {
 export function createIdlePlatformChatState(): PlatformChatState {
   return {
     autoReplyScope: "in_app_only",
+    automationPolicy: {
+      allowExternalExecution: false,
+      allowInAppAutoExecution: false,
+      maxExecutionLevel: "approval_required",
+    },
     lastError: null,
     lastEventAt: null,
     mode: null,
@@ -64,4 +74,3 @@ export function createIdlePlatformChatState(): PlatformChatState {
 export function isPlatformChatMode(value: unknown): value is PlatformChatMode {
   return typeof value === "string" && (platformModes as readonly string[]).includes(value)
 }
-

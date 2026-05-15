@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "hooks": {
+    "stop": [
+      {
+        "command": "sh scripts/cursor-stop-hook.sh",
+        "cwd": "."
+      }
+    ]
+  }
+}

@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events"
+import { classifyModeration } from "../shared/moderation.js"
 import {
   createIdlePlatformChatState,
   type PlatformChatMode,
@@ -6,6 +7,7 @@ import {
   type PlatformChatStateResponse,
   type PlatformViewerEvent,
 } from "../shared/platformChat.js"
+import { applyAutomationPolicyToPlatformState } from "./automationSafety.js"
 import { KickChatSource } from "./chatSources/kick.js"
 import { TwitchChatSource } from "./chatSources/twitch.js"
 import { YouTubeChatSource } from "./chatSources/youtube.js"
@@ -19,7 +21,7 @@ export class PlatformChatOrchestrator extends EventEmitter {
   private seenEventIds = new Set<string>()
   private seenEventOrder: string[] = []
   private source: PlatformChatSource | null = null
-  private state = createIdlePlatformChatState()
+  private state = applyAutomationPolicyToPlatformState(createIdlePlatformChatState())
 
   getSnapshot(): PlatformChatStateResponse {
     return {
@@ -38,7 +40,7 @@ export class PlatformChatOrchestrator extends EventEmitter {
     await this.stop()
 
     this.state = {
-      ...this.state,
+      ...applyAutomationPolicyToPlatformState(this.state),
       lastError: null,
       mode,
       status: "connecting",
@@ -54,7 +56,7 @@ export class PlatformChatOrchestrator extends EventEmitter {
     try {
       await source.connect(normalizedTarget)
       this.state = {
-        ...this.state,
+        ...applyAutomationPolicyToPlatformState(this.state),
         lastError: null,
         mode,
         status: "connected",
@@ -65,7 +67,7 @@ export class PlatformChatOrchestrator extends EventEmitter {
     } catch (error) {
       const message = error instanceof Error ? error.message : "Platform chat connection failed."
       this.state = {
-        ...this.state,
+        ...applyAutomationPolicyToPlatformState(this.state),
         lastError: message,
         mode,
         status: "error",
@@ -88,7 +90,7 @@ export class PlatformChatOrchestrator extends EventEmitter {
     }
 
     this.state = {
-      ...createIdlePlatformChatState(),
+      ...applyAutomationPolicyToPlatformState(createIdlePlatformChatState()),
       updatedAt: new Date().toISOString(),
     }
     this.emitState()
@@ -98,7 +100,7 @@ export class PlatformChatOrchestrator extends EventEmitter {
   private bindSource(source: PlatformChatSource) {
     source.on("connected", () => {
       this.state = {
-        ...this.state,
+        ...applyAutomationPolicyToPlatformState(this.state),
         lastError: null,
         status: "connected",
         updatedAt: new Date().toISOString(),
@@ -108,7 +110,7 @@ export class PlatformChatOrchestrator extends EventEmitter {
 
     source.on("disconnected", (reason?: string) => {
       this.state = {
-        ...this.state,
+        ...applyAutomationPolicyToPlatformState(this.state),
         lastError: reason ?? this.state.lastError,
         status: this.source ? "error" : "idle",
         updatedAt: new Date().toISOString(),
@@ -118,7 +120,7 @@ export class PlatformChatOrchestrator extends EventEmitter {
 
     source.on("error", (error: Error) => {
       this.state = {
-        ...this.state,
+        ...applyAutomationPolicyToPlatformState(this.state),
         lastError: error.message,
         status: "error",
         updatedAt: new Date().toISOString(),
@@ -127,12 +129,17 @@ export class PlatformChatOrchestrator extends EventEmitter {
     })
 
     source.on("viewer-event", (event: PlatformViewerEvent) => {
-      if (this.seenEventIds.has(event.id)) {
+      const moderatedEvent: PlatformViewerEvent = {
+        ...event,
+        moderation: classifyModeration(event.text),
+      }
+
+      if (this.seenEventIds.has(moderatedEvent.id)) {
         return
       }
 
-      this.seenEventIds.add(event.id)
-      this.seenEventOrder.push(event.id)
+      this.seenEventIds.add(moderatedEvent.id)
+      this.seenEventOrder.push(moderatedEvent.id)
       if (this.seenEventOrder.length > MAX_SEEN_EVENT_IDS) {
         const removed = this.seenEventOrder.shift()
         if (removed) {
@@ -140,20 +147,20 @@ export class PlatformChatOrchestrator extends EventEmitter {
         }
       }
 
-      this.recentEvents = [event, ...this.recentEvents].slice(0, MAX_RECENT_EVENTS)
+      this.recentEvents = [moderatedEvent, ...this.recentEvents].slice(0, MAX_RECENT_EVENTS)
       this.state = {
-        ...this.state,
+        ...applyAutomationPolicyToPlatformState(this.state),
         lastError: null,
-        lastEventAt: event.receivedAt,
+        lastEventAt: moderatedEvent.receivedAt,
         updatedAt: new Date().toISOString(),
       }
-      this.emit("viewer-event", event)
+      this.emit("viewer-event", moderatedEvent)
       this.emitState()
     })
   }
 
   private emitState() {
-    this.emit("state", { ...this.state })
+    this.emit("state", applyAutomationPolicyToPlatformState({ ...this.state }))
   }
 }
 

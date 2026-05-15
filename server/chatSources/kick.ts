@@ -1,4 +1,5 @@
 import { KickFlow } from "@gbrlstr/kick-flow"
+import { createAllowModerationAssessment } from "../../shared/moderation.js"
 import type { PlatformViewerEvent } from "../../shared/platformChat.js"
 import { PlatformChatSource, asError, isRecord, normalizePlatformTarget, normalizeViewerText } from "../platformChatSource.js"
 
@@ -124,6 +125,7 @@ function normalizeKickMessage(payload: unknown, target: string): PlatformViewerE
     id: `kick:${payload.id}`,
     isMonetized: false,
     kind: "comment",
+    moderation: createAllowModerationAssessment(),
     platform: "kick",
     receivedAt: typeof payload.created_at === "string" ? payload.created_at : new Date().toISOString(),
     target,
@@ -143,6 +145,7 @@ function normalizeKickSubscription(payload: unknown, target: string): PlatformVi
     id: `kick:subscription:${payload.username}:${Date.now()}`,
     isMonetized: true,
     kind: "subscription",
+    moderation: createAllowModerationAssessment(),
     monetization: {
       amountText: months ? `${months} months` : undefined,
       tier: months ? `${months}` : undefined,
@@ -173,6 +176,7 @@ function normalizeKickGiftSubscription(payload: unknown, target: string): Platfo
     id: `kick:gift_subscription:${payload.gifter_username}:${Date.now()}`,
     isMonetized: true,
     kind: "gift_subscription",
+    moderation: createAllowModerationAssessment(),
     monetization: {
       amountText: giftedCount > 0 ? `${giftedCount} gifted subs` : undefined,
       tier: months ? `${months}` : undefined,
@@ -186,4 +190,3 @@ function normalizeKickGiftSubscription(payload: unknown, target: string): Platfo
         : `${payload.gifter_username} sent gifted subscriptions.`,
   }
 }
-

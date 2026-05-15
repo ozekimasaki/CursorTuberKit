@@ -1,5 +1,5 @@
 import maidCatSvg from "../../maid_cat.svg?raw"
-import type { Emotion } from "../lib/emotion"
+import type { Emotion } from "../../shared/emotion"
 import type { Viseme } from "../lib/visemes"
 
 export type AvatarState = "idle" | "thinking" | "speaking" | "error"

@@ -1,4 +1,5 @@
 import { Innertube } from "youtubei.js"
+import { createAllowModerationAssessment } from "../../shared/moderation.js"
 import type { PlatformViewerEvent } from "../../shared/platformChat.js"
 import { PlatformChatSource, asError, isRecord, normalizeViewerText, numberToCssColor } from "../platformChatSource.js"
 
@@ -22,7 +23,7 @@ export class YouTubeChatSource extends PlatformChatSource {
   async connect(target: string) {
     const videoId = parseYouTubeVideoId(target)
     const yt = await Innertube.create()
-    const info = await yt.getBasicInfo(videoId)
+    const info = await yt.getInfo(videoId)
     const chat = info.getLiveChat() as unknown as YouTubeLiveChat
 
     this.target = videoId
@@ -113,29 +114,31 @@ function normalizeYouTubeAction(action: unknown, target: string): PlatformViewer
   if (isYouTubeTextMessage(item)) {
     const text = normalizeViewerText(item.message.toString())
     if (!text) return null
-    return {
-      authorName: item.author.name,
-      id: `youtube:${item.id}`,
-      isMonetized: false,
-      kind: "comment",
-      platform: "youtube",
-      receivedAt: toIsoTime(item.timestamp),
-      target,
-      text,
+      return {
+        authorName: item.author.name,
+        id: `youtube:${item.id}`,
+        isMonetized: false,
+        kind: "comment",
+        moderation: createAllowModerationAssessment(),
+        platform: "youtube",
+        receivedAt: toIsoTime(item.timestamp),
+        target,
+        text,
     }
   }
 
   if (isYouTubePaidMessage(item)) {
     const text = normalizeViewerText(item.message.toString())
     if (!text) return null
-    return {
-      authorName: item.author.name,
-      id: `youtube:${item.id}`,
-      isMonetized: true,
-      kind: "superchat",
-      monetization: {
-        accentColor: numberToCssColor(item.header_background_color),
-        amountText: item.purchase_amount,
+      return {
+        authorName: item.author.name,
+        id: `youtube:${item.id}`,
+        isMonetized: true,
+        kind: "superchat",
+        moderation: createAllowModerationAssessment(),
+        monetization: {
+          accentColor: numberToCssColor(item.header_background_color),
+          amountText: item.purchase_amount,
       },
       platform: "youtube",
       receivedAt: toIsoTime(item.timestamp),
@@ -150,6 +153,7 @@ function normalizeYouTubeAction(action: unknown, target: string): PlatformViewer
       id: `youtube:${item.id}`,
       isMonetized: true,
       kind: "paid_sticker",
+      moderation: createAllowModerationAssessment(),
       monetization: {
         accentColor: numberToCssColor(item.background_color),
         amountText: item.purchase_amount,
@@ -171,6 +175,7 @@ function normalizeYouTubeAction(action: unknown, target: string): PlatformViewer
       id: `youtube:${item.id}`,
       isMonetized: true,
       kind: "membership",
+      moderation: createAllowModerationAssessment(),
       platform: "youtube",
       receivedAt: toIsoTime(item.timestamp),
       target,

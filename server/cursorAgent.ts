@@ -1,14 +1,21 @@
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process"
 import { existsSync } from "node:fs"
 import { fileURLToPath } from "node:url"
+import type { ChatActionPayload, ChatSessionPayload } from "../shared/chatStream.js"
+import type { CharacterArtifactsPayload } from "../shared/characterAgents.js"
+import type { FinalEmotionPayload } from "../shared/emotion.js"
 import type { StreamAiResponseOptions } from "./aiCommon.js"
 
 const isBunRuntime = typeof globalThis === "object" && "Bun" in globalThis
 let cachedNodeExecutable: string | null = null
 
 type CursorWorkerEvent =
+  | { type: "action"; payload: ChatActionPayload }
+  | { type: "character-artifacts"; payload: CharacterArtifactsPayload }
   | { type: "done" }
+  | { type: "emotion"; payload: FinalEmotionPayload }
   | { type: "error"; message: string }
+  | { type: "session"; payload: ChatSessionPayload }
   | { type: "text"; text: string }
 
 export class CursorConfigurationError extends Error {
@@ -26,7 +33,15 @@ export function validateCursorConfiguration() {
   }
 }
 
-export async function streamCursorResponse({ compiledPrompt, onText, signal }: StreamAiResponseOptions) {
+export async function streamCursorResponse({
+  compiledPrompt,
+  onEmotion,
+  onSupportingEvent,
+  onText,
+  route,
+  session,
+  signal,
+}: StreamAiResponseOptions) {
   validateCursorConfiguration()
 
   if (signal.aborted) {
@@ -54,7 +69,13 @@ export async function streamCursorResponse({ compiledPrompt, onText, signal }: S
   }
 
   signal.addEventListener("abort", handleAbort, { once: true })
-  child.stdin.end(JSON.stringify({ compiledPrompt }))
+  child.stdin.end(
+    JSON.stringify({
+      compiledPrompt,
+      route,
+      session,
+    }),
+  )
 
   try {
     await new Promise<void>((resolve, reject) => {
@@ -96,6 +117,16 @@ export async function streamCursorResponse({ compiledPrompt, onText, signal }: S
 
           if (event.type === "text") {
             onText(event.text)
+            continue
+          }
+
+          if (event.type === "session" || event.type === "action" || event.type === "character-artifacts") {
+            onSupportingEvent?.(event)
+            continue
+          }
+
+          if (event.type === "emotion") {
+            onEmotion?.(event.payload)
             continue
           }
 
@@ -151,7 +182,6 @@ function spawnCursorWorker() {
     env: {
       ...process.env,
       CURSOR_API_KEY: process.env.CURSOR_API_KEY?.trim() ?? "",
-      CURSOR_MODEL: process.env.CURSOR_MODEL?.trim() || "composer-2",
     },
     stdio: ["pipe", "pipe", "pipe"],
   })
