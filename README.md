@@ -95,6 +95,7 @@ npm run voicevox:stop
 ### MotionPNGTuber mode
 
 - Select **Settings > Avatar > MotionPNGTuber**
+- Upstream project: <https://github.com/rotejin/MotionPNGTuber>
 - Load a local asset folder with the built-in folder picker
 - Required files:
   - `*_mouthless_h264.mp4`
