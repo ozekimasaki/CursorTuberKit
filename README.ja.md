@@ -1,0 +1,94 @@
+# CursorTuberKit
+
+日本語ドキュメントです。英語版のメイン README は [README.md](./README.md) を参照してください。
+
+- **Repository:** <https://github.com/ozekimasaki/CursorTuberKit>
+- **English README:** [README.md](./README.md)
+- **License:** [MIT](./LICENSE)
+
+## 概要
+
+CursorTuberKit は、**Cursor ベース**の配信アバター運用向けキットです。もうキャットリン専用ではなく、同梱の SVG サンプルアバターをそのまま使うことも、MotionPNGTuber アセットへ切り替えて自分向けの配信アバターへ発展させることもできます。AI 返答の字幕表示、VOICEVOX 読み上げ、live chat 連携、背景差し替えまでブラウザ中心で扱えます。
+
+## 主な機能
+
+- Cursor 専用 runtime
+- SVG / MotionPNGTuber の切り替え
+- VOICEVOX 音声合成
+- 発話に同期する口パク
+- YouTube / Twitch / Kick のコメント連携
+- 直列再生を崩さない自動返答キュー
+- 画像 / 動画の背景差し替え
+- 差し替え前提のアバター運用
+
+## 想定ユースケース
+
+- Cursor 駆動の会話型アバター配信を作りたい
+- まずは同梱 SVG で試し、後から独自アバターへ置き換えたい
+- MotionPNGTuber ベースの動画アセットへ発展させたい
+
+## セットアップ
+
+```powershell
+git clone https://github.com/ozekimasaki/CursorTuberKit.git
+cd CursorTuberKit
+git submodule update --init --recursive
+npm install
+Copy-Item .env.example .env
+```
+
+`.env.example` を元に Cursor API key などを設定してください。`AI_PROVIDER` は `cursor` のままで使います。
+
+## 開発コマンド
+
+```powershell
+npm run dev
+npm run typecheck
+npm run build
+npm run start
+```
+
+VOICEVOX:
+
+```powershell
+npm run voicevox:start
+npm run voicevox:status
+npm run voicevox:stop
+```
+
+## MotionPNGTuber
+
+- `Settings > Avatar > MotionPNGTuber` で切り替え
+- folder picker でローカルのアセットフォルダを選択
+- 必須:
+  - `*_mouthless_h264.mp4`
+  - `mouth_track.json`
+  - `mouth/closed.png`
+  - `mouth/open.png`
+- 任意:
+  - `mouth/half.png`
+  - `mouth/e.png`
+  - `mouth/u.png`
+
+調整可能:
+
+- 感度
+- HQ Audio
+- クロマキー
+- 位置 X / Y
+- 拡大率
+
+## 背景差し替え
+
+`Settings > Background` から画像または動画を選ぶと、stage 背景を差し替えられます。動画はミュート・ループ再生です。SVG モードでは、カスタム背景を使うと埋め込み装飾レイヤーを自動で隠します。
+
+## カスタマイズ
+
+- デフォルトの SVG アセットを差し替えて独自アバターにする
+- MotionPNGTuber アセットで動画ベース表示へ移行する
+- 背景、クロマキー、位置、拡大率をアバターに合わせて調整する
+- プロンプトやキャラクター設定を自分の配信方針に合わせる
+
+## ライセンス
+
+このリポジトリは [MIT License](./LICENSE) です。
