@@ -208,20 +208,15 @@ button:not(:disabled):hover { transform: translateY(-1px); }
   place-items: center;
   width: min(80vh, 76vw, 860px);
   aspect-ratio: 16 / 9;
-  overflow: hidden;
-  border-radius: 28px;
-  border: 1px solid rgb(99 230 255 / 24%);
-  background:
-    radial-gradient(circle at top, rgb(255 255 255 / 22%), transparent 54%),
-    rgb(8 17 31 / 8%);
-  box-shadow:
-    0 18px 42px rgb(14 22 42 / 16%),
-    inset 0 0 0 1px rgb(255 255 255 / 10%);
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .motionpng-stage--ready {
   background: transparent;
-  border-color: rgb(99 230 255 / 14%);
 }
 
 .motionpng-stage__source {
@@ -253,6 +248,7 @@ button:not(:disabled):hover { transform: translateY(-1px); }
   display: grid;
   place-items: center;
   padding: 24px;
+  border-radius: 24px;
   color: rgb(255 255 255 / 88%);
   text-align: center;
   line-height: 1.7;

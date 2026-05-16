@@ -24,7 +24,7 @@ export async function playAudioBlob(blob: Blob, options: PlayAudioOptions): Prom
   const analyser = audioContext?.createAnalyser() ?? null
   const source = audioContext ? audioContext.createMediaElementSource(audio) : null
   const frequencyData = analyser ? new Uint8Array(analyser.frequencyBinCount) : null
-  const timeDomainData = analyser ? new Uint8Array(analyser.fftSize) : null
+  const timeDomainData = analyser ? new Float32Array(analyser.fftSize) : null
   let animationFrameId: number | null = null
   let settled = false
   let smoothedIntensity = 0
@@ -45,7 +45,7 @@ export async function playAudioBlob(blob: Blob, options: PlayAudioOptions): Prom
 
   if (analyser) {
     analyser.fftSize = 512
-    analyser.smoothingTimeConstant = 0.4
+    analyser.smoothingTimeConstant = 0.2
   }
 
   if (source && analyser && audioContext) {
@@ -126,14 +126,13 @@ export async function playAudioBlob(blob: Blob, options: PlayAudioOptions): Prom
       }
 
       analyser.getByteFrequencyData(frequencyData)
-      analyser.getByteTimeDomainData(timeDomainData)
+      analyser.getFloatTimeDomainData(timeDomainData)
 
       const averageFrequency =
         frequencyData.reduce((sum, value) => sum + value, 0) / frequencyData.length / 255
       const rms = Math.sqrt(
         timeDomainData.reduce((sum, value) => {
-          const centered = (value - 128) / 128
-          return sum + centered * centered
+          return sum + value * value
         }, 0) / timeDomainData.length,
       )
       const sampleRate = audioContext?.sampleRate ?? 48_000
@@ -142,10 +141,9 @@ export async function playAudioBlob(blob: Blob, options: PlayAudioOptions): Prom
       let highEnergy = 0
 
       for (const value of timeDomainData) {
-        const centered = (value - 128) / 128
-        const low = lowpassState + lowAlpha * (centered - lowpassState)
+        const low = lowpassState + lowAlpha * (value - lowpassState)
         lowpassState = low
-        const high = centered - low
+        const high = value - low
         lowEnergy += low * low
         highEnergy += high * high
       }
