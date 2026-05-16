@@ -7,7 +7,7 @@ import {
 } from "../../shared/characterPresets"
 import { createDefaultChatSettings, maxCharacterNameLength, maxCharacterPromptLength, type ChatSettings } from "../../shared/chatSettings"
 import { characterProfile, characterProfileHighlights } from "../../shared/characterProfile"
-import { characterSinNames, type CharacterSinName } from "../../shared/characterState"
+import { characterSinNames, type CharacterSinName, type CharacterSinValues } from "../../shared/characterState"
 import type { ModerationAssessment } from "../../shared/moderation"
 import type {
   PlatformChatMode,
@@ -63,6 +63,7 @@ type ControlDockProps = {
   chatSettings: ChatSettings
   chatSettingsBusy: boolean
   chatSettingsNotice: string | null
+  runtimeCharacterSins: CharacterSinValues
   motionPngAssetStatus: MotionPngAssetStatus
   motionPngFolderLabel: string | null
   motionPngSettings: MotionPngSettings
@@ -128,6 +129,7 @@ export function ControlDock({
   chatSettings,
   chatSettingsBusy,
   chatSettingsNotice,
+  runtimeCharacterSins,
   motionPngAssetStatus,
   motionPngFolderLabel,
   motionPngSettings,
@@ -148,7 +150,6 @@ export function ControlDock({
   const [prompt, setPrompt] = useState("")
   const [characterNameDraft, setCharacterNameDraft] = useState(chatSettings.characterName)
   const [characterPromptDraft, setCharacterPromptDraft] = useState(chatSettings.characterPrompt)
-  const [characterSinsDraft, setCharacterSinsDraft] = useState(chatSettings.characterState.sins)
   const [presetLabelDraft, setPresetLabelDraft] = useState(chatSettings.characterName)
   const [selectedPresetId, setSelectedPresetId] = useState("")
   const [memoryModeDraft, setMemoryModeDraft] = useState(chatSettings.memory.mode)
@@ -173,7 +174,6 @@ export function ControlDock({
   useEffect(() => {
     setCharacterNameDraft(chatSettings.characterName)
     setCharacterPromptDraft(chatSettings.characterPrompt)
-    setCharacterSinsDraft(chatSettings.characterState.sins)
     setMemoryModeDraft(chatSettings.memory.mode)
     setMemoryPersistDraft(chatSettings.memory.persistResponses)
   }, [chatSettings])
@@ -299,7 +299,6 @@ export function ControlDock({
   const isSettingsDirty =
     characterNameDraft !== chatSettings.characterName ||
     characterPromptDraft !== chatSettings.characterPrompt ||
-    characterSinNames.some((sinName) => characterSinsDraft[sinName] !== chatSettings.characterState.sins[sinName]) ||
     memoryModeDraft !== chatSettings.memory.mode ||
     memoryPersistDraft !== chatSettings.memory.persistResponses
   const trimmedPresetLabel = presetLabelDraft.replace(/\s+/g, " ").trim()
@@ -734,9 +733,6 @@ export function ControlDock({
                             ...chatSettings,
                             characterName: characterNameDraft,
                             characterPrompt: characterPromptDraft,
-                            characterState: {
-                              sins: characterSinsDraft,
-                            },
                             memory: {
                               mode: memoryModeDraft,
                               persistResponses: memoryPersistDraft,
@@ -754,7 +750,6 @@ export function ControlDock({
                           const defaults = createDefaultChatSettings()
                           setCharacterNameDraft(defaults.characterName)
                           setCharacterPromptDraft(defaults.characterPrompt)
-                          setCharacterSinsDraft(defaults.characterState.sins)
                           setPresetLabelDraft(defaults.characterName)
                           setMemoryModeDraft(defaults.memory.mode)
                           setMemoryPersistDraft(defaults.memory.persistResponses)
@@ -763,42 +758,6 @@ export function ControlDock({
                       >
                         既定に戻す
                       </button>
-                    </div>
-                  </div>
-
-                  <div className="card">
-                    <div className="card__header">
-                      <div>
-                        <p className="card__title">Initial Behavior Tuning</p>
-                        <p className="card__hint card__hint--compact">
-                          hook で自動変動する7軸の初期値です。配信中の変動値そのものを固定する設定ではありません。
-                        </p>
-                      </div>
-                      <span className="info-chip info-chip--muted">Advanced</span>
-                    </div>
-                    <div className="field-group">
-                      {characterSinNames.map((sinName) => (
-                        <label key={sinName} className="field">
-                          <span className="card__key">
-                            {describeCharacterSinLabel(sinName)} {characterSinsDraft[sinName]}
-                          </span>
-                          <input
-                            className="field__input field__input--range"
-                            type="range"
-                            min={0}
-                            max={100}
-                            value={characterSinsDraft[sinName]}
-                            onChange={(e) =>
-                              setCharacterSinsDraft((current) => ({
-                                ...current,
-                                [sinName]: Number.parseInt(e.target.value, 10),
-                              }))
-                            }
-                            disabled={chatSettingsBusy || chatMemoryClearBusy}
-                          />
-                          <span className="card__hint">{describeCharacterSinHint(sinName)}</span>
-                        </label>
-                      ))}
                     </div>
                   </div>
 
@@ -854,6 +813,26 @@ export function ControlDock({
                         <p className="notice__text">{chatSettingsNotice}</p>
                       </div>
                     )}
+                  </div>
+
+                  <div className="card">
+                    <div className="card__header">
+                      <div>
+                        <p className="card__title">Current Hidden State</p>
+                        <p className="card__hint card__hint--compact">
+                          現在プロンプトに反映されている内部値です。初期値は全軸 50 で、hook に応じて自動変動します。
+                        </p>
+                      </div>
+                      <span className="info-chip info-chip--muted">Read only</span>
+                    </div>
+                    <div className="field-group">
+                      {characterSinNames.map((sinName) => (
+                        <div key={sinName} className="card__row">
+                          <span className="card__key">{describeCharacterSinLabel(sinName)}</span>
+                          <span className="card__val">{runtimeCharacterSins[sinName]}</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </>
               )}
@@ -1297,25 +1276,6 @@ function describeCharacterSinLabel(name: CharacterSinName) {
       return "Lust"
     case "gluttony":
       return "Gluttony"
-  }
-}
-
-function describeCharacterSinHint(name: CharacterSinName) {
-  switch (name) {
-    case "pride":
-      return "主役感・気品の強さ"
-    case "greed":
-      return "もっと構いたくなる配信欲"
-    case "envy":
-      return "特別扱いしたくなる距離感"
-    case "wrath":
-      return "境界線を引く鋭さ"
-    case "sloth":
-      return "くつろいだ間合い"
-    case "lust":
-      return "上品な甘やかしと小悪魔感"
-    case "gluttony":
-      return "ご褒美感・満足感の濃さ"
   }
 }
 

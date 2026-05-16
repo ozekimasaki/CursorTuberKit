@@ -35,13 +35,13 @@ export type CharacterStateMetadata = {
 }
 
 const defaultCharacterSinValues: CharacterSinValues = {
-  envy: 31,
-  gluttony: 61,
-  greed: 43,
-  lust: 72,
-  pride: 64,
-  sloth: 27,
-  wrath: 18,
+  envy: 50,
+  gluttony: 50,
+  greed: 50,
+  lust: 50,
+  pride: 50,
+  sloth: 50,
+  wrath: 50,
 }
 
 export function clampCharacterSinValue(value: number) {

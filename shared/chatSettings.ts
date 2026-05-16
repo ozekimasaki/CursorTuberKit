@@ -139,10 +139,7 @@ export function applyChatSettingsPatch(base: ChatSettings, patch: ChatSettingsPa
     characterName: normalizeCharacterName(patch.characterName, base.characterName),
     characterPrompt: normalizeCharacterPrompt(patch.characterPrompt, base.characterPrompt),
     characterState: {
-      sins: normalizeCharacterSinValues({
-        ...base.characterState.sins,
-        ...(patch.characterState?.sins ?? {}),
-      }),
+      sins: normalizeCharacterSinValues(),
     },
     memory: {
       mode: patch.memory?.mode ?? base.memory.mode,
@@ -160,14 +157,12 @@ export function normalizeChatSettings(value: unknown): ChatSettings {
   }
 
   const memory = isRecord(value.memory) ? value.memory : null
-  const characterState = isRecord(value.characterState) ? value.characterState : null
-  const sins = isRecord(characterState?.sins) ? normalizeCharacterSinPatch(characterState.sins) : undefined
 
   return {
     characterName: normalizeCharacterName(value.characterName, fallback.characterName),
     characterPrompt: normalizeCharacterPrompt(value.characterPrompt, fallback.characterPrompt),
     characterState: {
-      sins: normalizeCharacterSinValues(sins),
+      sins: normalizeCharacterSinValues(),
     },
     memory: {
       mode: isChatMemoryMode(memory?.mode) ? memory.mode : fallback.memory.mode,
@@ -228,20 +223,6 @@ export function normalizeCharacterPrompt(value: unknown, fallback: string) {
   return normalized.length <= maxCharacterPromptLength
     ? normalized
     : normalized.slice(0, maxCharacterPromptLength)
-}
-
-function normalizeCharacterSinPatch(value: Record<string, unknown>): Partial<Record<CharacterSinName, number>> {
-  const patch: Partial<Record<CharacterSinName, number>> = {}
-
-  for (const sinName of characterSinNames) {
-    const rawValue = value[sinName]
-
-    if (typeof rawValue === "number" && Number.isFinite(rawValue)) {
-      patch[sinName] = rawValue
-    }
-  }
-
-  return patch
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

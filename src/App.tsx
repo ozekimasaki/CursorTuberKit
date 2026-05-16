@@ -7,6 +7,7 @@ import {
 import type { CharacterPreset, CharacterPresetInput } from "../shared/characterPresets"
 import type { ChatMetadataPayload, ChatSessionPayload } from "../shared/chatStream"
 import { createDefaultChatSettings, type ChatSettings } from "../shared/chatSettings"
+import type { CharacterSinValues } from "../shared/characterState"
 import { characterProfile } from "../shared/characterProfile"
 import type { Emotion, FinalEmotionPayload } from "../shared/emotion"
 import type { ModerationAssessment } from "../shared/moderation"
@@ -373,6 +374,9 @@ export function App() {
   const [sessionMetadata, setSessionMetadata] = useState<ChatSessionPayload | null>(null)
   const [finalEmotionPayload, setFinalEmotionPayload] = useState<FinalEmotionPayload | null>(null)
   const [latestRunRecap, setLatestRunRecap] = useState<ChatRunRecap | null>(null)
+  const [runtimeCharacterSins, setRuntimeCharacterSins] = useState<CharacterSinValues>(
+    () => createDefaultChatSettings().characterState.sins,
+  )
   const [latestAutomationEnvelope, setLatestAutomationEnvelope] = useState<AutomationEnvelope | null>(null)
   const [latestModeration, setLatestModeration] = useState<ModerationAssessment | null>(null)
   const [dockOpen, setDockOpen] = useState(true)
@@ -408,6 +412,15 @@ export function App() {
   const autoReplySeenEventIdsRef = useRef<Set<string>>(new Set())
   const autoReplySeenScopeRef = useRef<string | null>(null)
   const bridgeSpeechCacheRef = useRef<Map<string, Blob>>(new Map())
+
+  async function syncRuntimeStatus(signal?: AbortSignal) {
+    const snapshot = await fetchRuntimeStatus(signal)
+    setLatestRunRecap(snapshot.chatRuns.recent[0] ?? null)
+
+    if (snapshot.characterStateCurrent) {
+      setRuntimeCharacterSins(snapshot.characterStateCurrent)
+    }
+  }
   const preparedAutoReplyQueueRef = useRef<PreparedAutoReply[]>([])
   const preparedAutoReplySequenceRef = useRef(0)
   const preparedAutoReplyPlaybackBusyRef = useRef(false)
@@ -471,13 +484,9 @@ export function App() {
   useEffect(() => {
     const abortController = new AbortController()
 
-    fetchRuntimeStatus(abortController.signal)
-      .then((snapshot) => {
-        setLatestRunRecap(snapshot.chatRuns.recent[0] ?? null)
-      })
-      .catch(() => {
-        // ignore initial runtime status failures
-      })
+    syncRuntimeStatus(abortController.signal).catch(() => {
+      // ignore initial runtime status failures
+    })
 
     return () => abortController.abort()
   }, [])
@@ -1093,6 +1102,7 @@ export function App() {
         if (event.type === "meta") {
           if (isChatRunRecap(event.meta.raw)) {
             setLatestRunRecap(event.meta.raw)
+            void syncRuntimeStatus()
           }
           setRuntimeProgress((current) => applyRuntimeMetadataEvent(current, event.meta))
         }
@@ -1255,7 +1265,9 @@ export function App() {
         memory: nextSettings.memory,
       })
       setChatSettings(saved)
-      setChatSettingsNotice("キャラクター名・キャラクター設定・7軸・長期記憶設定を保存しました。")
+      setRuntimeCharacterSins(saved.characterState.sins)
+      setChatSettingsNotice("キャラクター名・キャラクター設定・長期記憶設定を保存しました。")
+      void syncRuntimeStatus()
     } catch (error) {
       if (!isAbortError(error)) {
         showError(error instanceof Error ? error.message : "設定の保存に失敗しました。")
@@ -2461,6 +2473,7 @@ export function App() {
         chatSettings={chatSettings}
         chatSettingsBusy={chatSettingsAction === "saving"}
         chatSettingsNotice={chatSettingsNotice}
+        runtimeCharacterSins={runtimeCharacterSins}
         errorMessage={visibleError}
         motionPngAssetStatus={motionPngAssetStatus}
         motionPngFolderLabel={motionPngFolderLabel}

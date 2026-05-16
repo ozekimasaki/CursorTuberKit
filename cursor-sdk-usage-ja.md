@@ -22,6 +22,8 @@
 2. **サブエージェント群によるキャラクター補助データ生成**
 3. **Run イベントのストリーミング監視とテレメトリ収集**
 
+あわせて、SDK そのものではありませんが、**Cursor の stop hook** を併用して会話終了タイミングを観測し、内部のキャラクター感情値（7つの大罪パラメータ）の自動変動に使っています。
+
 ---
 
 ## 利用機能ごとの対応表
@@ -92,6 +94,18 @@
 - `server/cursorWorker.ts:442-444`
 
 のように、**ローカル実行コンテキストの明示** と、必要時の **`local.force: true` 再試行** まで入っています。
+
+### 5. SDK 外だが併用している Cursor hook
+
+`@cursor/sdk` の API ではありませんが、現在の実装では stop hook も併用しています。
+
+- `.cursor/hooks.json`
+- `scripts/cursor-stop-hook.mjs`
+- `server/cursorWorker.ts`
+- `server/characterRuntimeState.ts`
+
+この経路では stop hook の完了を観測したあと、Character Director が返した `sevenDeadlySins` をもとに内部値を少しずつ更新しています。  
+その更新後の値は次回の `resolveCharacterRuntimeContext(...)` に入り、結果として **次回以降のプロンプト内容に反映** されます。
 
 ---
 

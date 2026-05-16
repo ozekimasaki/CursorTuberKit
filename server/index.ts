@@ -78,8 +78,17 @@ app.get("/api/health", (_request, response) => {
   })
 })
 
-app.get("/api/runtime/status", (_request, response) => {
-  response.json(runtimeStatusTracker.getSnapshot())
+app.get("/api/runtime/status", async (_request, response) => {
+  try {
+    const settings = await readChatSettings()
+    const characterStateCurrent = await readCharacterRuntimeSinValues(settings.characterState.sins)
+    response.json({
+      ...runtimeStatusTracker.getSnapshot(),
+      characterStateCurrent,
+    })
+  } catch (error) {
+    response.status(500).json({ error: getErrorMessage(error) })
+  }
 })
 
 app.get("/api/chat-settings", async (_request, response) => {

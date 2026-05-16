@@ -1,3 +1,4 @@
+import type { CharacterSinValues } from "../../shared/characterState"
 import type { ChatProvider } from "../../shared/chatStream"
 import type { FinalEmotionPayload } from "../../shared/emotion"
 
@@ -18,13 +19,14 @@ export type ChatRunRecap = {
 }
 
 export type RuntimeStatusSnapshot = {
+  characterStateCurrent?: CharacterSinValues | null
   chatRuns: {
     recent: ChatRunRecap[]
   }
 }
 
-export async function fetchRuntimeStatus(signal: AbortSignal) {
-  const response = await fetch("/api/runtime/status", { signal })
+export async function fetchRuntimeStatus(signal?: AbortSignal) {
+  const response = await fetch("/api/runtime/status", signal ? { signal } : undefined)
 
   if (!response.ok) {
     throw new Error(`runtime status fetch failed: ${response.status}`)
