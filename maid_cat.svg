@@ -109,11 +109,11 @@
       <circle cx="692" cy="706" r="7"/>
     </g>
   </g>
-  <g aria-hidden="true" opacity=".42" fill="none" stroke="#fff" stroke-width="5">
+  <g id="avatar-corner-lines" aria-hidden="true" opacity=".42" fill="none" stroke="#fff" stroke-width="5">
     <path d="M104 160c45-45 96-45 141 0M656 160c45-45 96-45 141 0"/>
     <path d="M116 700c63 35 128 36 193 3M591 703c65 33 130 32 193-3"/>
   </g>
-  <g aria-hidden="true" fill="#ffffff" opacity=".78">
+  <g id="avatar-sparkles" aria-hidden="true" fill="#ffffff" opacity=".78">
     <circle cx="128" cy="110" r="12"/>
     <circle cx="774" cy="120" r="10"/>
     <circle cx="106" cy="762" r="11"/>
@@ -121,7 +121,7 @@
     <path d="M709 235l11 22 24 4-18 17 4 24-21-11-21 11 4-24-18-17 24-4z"/>
     <path d="M175 267l8 17 19 3-14 13 3 19-16-9-17 9 4-19-14-13 19-3z"/>
   </g>
-  <g aria-hidden="true" opacity=".72">
+  <g id="avatar-floating-icons" aria-hidden="true" opacity=".72">
     <path d="M230 126c14-24 47-8 35 18-7 15-35 35-35 35s-28-20-35-35c-12-26 21-42 35-18z" fill="#ff9dca"/>
     <path d="M670 323c12-21 40-7 30 16-7 13-30 29-30 29s-24-16-30-29c-10-23 18-37 30-16z" fill="#ffb4d7"/>
     <path d="M205 548l9 18 20 3-15 14 4 20-18-10-18 10 4-20-15-14 20-3z" fill="#fff"/>

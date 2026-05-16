@@ -330,6 +330,13 @@ button:not(:disabled):hover { transform: translateY(-1px); }
 .avatar #mouth-base,
 .avatar #muzzle-smile { transition: opacity 90ms ease-out, transform 220ms ease; }
 
+.avatar--clean-background #pet-interface,
+.avatar--clean-background #avatar-corner-lines,
+.avatar--clean-background #avatar-sparkles,
+.avatar--clean-background #avatar-floating-icons {
+  display: none;
+}
+
 .avatar--idle #head { animation: head-sway 5.8s ease-in-out infinite; }
 .avatar--idle #left-gesture-arm { animation: idle-paw-wave 5.6s ease-in-out infinite; }
 .avatar--idle #left-paw { animation: paw-bob 5.6s ease-in-out infinite; }

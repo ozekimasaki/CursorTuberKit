@@ -2086,7 +2086,12 @@ export function App() {
                 state={avatarState}
               />
             ) : (
-              <MaidCatAvatar emotion={emotion} state={avatarState} viseme={viseme} />
+              <MaidCatAvatar
+                emotion={emotion}
+                hideBackgroundDecor={Boolean(stageBackgroundMedia)}
+                state={avatarState}
+                viseme={viseme}
+              />
             )}
           </div>
         </div>
