@@ -62,12 +62,12 @@ export function ContentSurfacePanel({
             <p className="content-surface__item-summary">{suggestion.summary}</p>
             {variant === "dock" && onUseSuggestion ? (
               <button
-                className="btn btn--ghost content-surface__item-action"
+                className="btn btn--secondary content-surface__item-action"
                 type="button"
                 disabled={busy}
                 onClick={() => onUseSuggestion(suggestion.prompt)}
               >
-                {busy ? "応答中…" : "必要なら手動差し込み"}
+                {busy ? "応答中…" : "手動で使う"}
               </button>
             ) : null}
           </article>

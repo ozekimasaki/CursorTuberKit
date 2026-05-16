@@ -21,15 +21,20 @@ export function ViewerEventFeed({
           className={`event-item${event.isMonetized ? " event-item--monetized" : ""}`}
         >
           <div className="event-item__head">
+            <div className="event-item__author-block">
+              <strong className="event-item__author">{event.authorName}</strong>
+              <span className="event-item__time">{formatRelativeTimestamp(event.receivedAt)}</span>
+            </div>
+            {event.monetization?.amountText && (
+              <span className="event-item__money">{event.monetization.amountText}</span>
+            )}
+          </div>
+          <div className="event-item__meta">
             <span className="event-item__badge">{eventLabel(event)}</span>
-            <strong className="event-item__author">{event.authorName}</strong>
             {event.moderation.disposition !== "allow" && (
               <span className={`event-item__moderation event-item__moderation--${event.moderation.disposition}`}>
                 {event.moderation.disposition === "block" ? "BLOCK" : "REVIEW"}
               </span>
-            )}
-            {event.monetization?.amountText && (
-              <span className="event-item__money">{event.monetization.amountText}</span>
             )}
           </div>
           <p className="event-item__text">{event.text}</p>
@@ -58,4 +63,36 @@ function eventLabel(event: PlatformViewerEvent) {
     case "hype_chat":
       return "HYPE CHAT"
   }
+}
+
+function formatRelativeTimestamp(value: string) {
+  const timestamp = Date.parse(value)
+
+  if (Number.isNaN(timestamp)) {
+    return "時刻不明"
+  }
+
+  const diffSeconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000))
+
+  if (diffSeconds < 10) {
+    return "たった今"
+  }
+
+  if (diffSeconds < 60) {
+    return `${diffSeconds}秒前`
+  }
+
+  const diffMinutes = Math.floor(diffSeconds / 60)
+
+  if (diffMinutes < 60) {
+    return `${diffMinutes}分前`
+  }
+
+  const diffHours = Math.floor(diffMinutes / 60)
+
+  if (diffHours < 24) {
+    return `${diffHours}時間前`
+  }
+
+  return `${Math.floor(diffHours / 24)}日前`
 }

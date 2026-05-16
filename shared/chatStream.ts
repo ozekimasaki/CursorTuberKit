@@ -1,8 +1,9 @@
 import type { FinalEmotionPayload } from "./emotion.js"
 import type { CharacterArtifactsPayload } from "./characterAgents.js"
 import type { CharacterStateMetadata } from "./characterState.js"
+import type { CursorPromptMode } from "./cursorPrompt.js"
 
-export const chatProviders = ["cursor", "gemini"] as const
+export const chatProviders = ["cursor"] as const
 export type ChatProvider = (typeof chatProviders)[number]
 
 export const chatStreamStates = ["thinking", "speaking", "done"] as const
@@ -19,6 +20,8 @@ export type ChatSessionPayload = {
   characterStateSignature?: string
   provider: ChatProvider
   providerSessionId?: string
+  promptLength?: number
+  promptMode?: CursorPromptMode
   runId?: string
   transport: "cookie"
   supportsResume: boolean

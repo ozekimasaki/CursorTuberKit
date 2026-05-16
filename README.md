@@ -130,11 +130,13 @@ The custom background renders behind both avatar modes. When SVG mode is active,
 - Use MotionPNGTuber assets when you want video-based rendering instead of SVG
 - Tune background media, chroma key, scale, and position per avatar setup
 - Adjust the surrounding prompts and orchestration to fit your own character or channel identity
+- Edit the character persona prompt, save persona presets, and tune long-term memory behavior from the in-app **Settings** panel
 
 ## Live Chat
 
 - Choose YouTube / Twitch / Kick in **Live Chat Mode**
 - Incoming comments flow into the dock feed
+- Duplicate comment playback from reconnect/replay paths is suppressed before auto-reply queueing
 - With auto reply enabled, replies are generated in the background but **spoken playback remains serialized**
 - Replies are rendered inside the app only; they are not auto-posted back into platform chat
 

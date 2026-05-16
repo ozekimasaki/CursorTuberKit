@@ -9,6 +9,8 @@ import {
 } from "../shared/characterAgents.js"
 import { characterProfile } from "../shared/characterProfile.js"
 import { emotionValues, inferEmotionFromText, type Emotion } from "../shared/emotion.js"
+import { collectCursorRun } from "./cursorSdkRun.js"
+import type { CursorRunTelemetryRecord } from "./cursorTypes.js"
 
 const CHARACTER_DIRECTOR_NAME = "character-director"
 const LORE_KEEPER_NAME = "lore-keeper"
@@ -17,6 +19,7 @@ const CONTENT_WRITER_NAME = "content-writer"
 
 type CharacterArtifactsResult = {
   payload: CharacterArtifactsPayload
+  telemetry: CursorRunTelemetryRecord | null
   usedFallback: boolean
 }
 
@@ -26,6 +29,11 @@ type CharacterArtifactsOptions = {
   characterStateSignature: string
   conversationContext: string
   model: string
+  session: {
+    browserSessionId: string
+    providerSessionId?: string
+    requestRunId?: string
+  }
   runState: {
     get: () => Run | null
     set: (run: Run | null) => Run | null
@@ -36,8 +44,10 @@ export async function deriveCharacterArtifacts(options: CharacterArtifactsOption
   const agentUsage = createCharacterAgentUsage()
 
   try {
+    const analysisResult = await runCharacterArtifactAnalysis(options, agentUsage)
     return {
-      payload: await runCharacterArtifactAnalysis(options, agentUsage),
+      payload: analysisResult.payload,
+      telemetry: analysisResult.telemetry,
       usedFallback: false,
     }
   } catch (error) {
@@ -52,6 +62,7 @@ export async function deriveCharacterArtifacts(options: CharacterArtifactsOption
         model: options.model,
         warning: reason,
       }),
+      telemetry: null,
       usedFallback: true,
     }
   }
@@ -118,7 +129,7 @@ async function runCharacterArtifactAnalysis(
   })
 
   const previousRun = options.runState.get()
-  let rawResponse = ""
+  const analysisStartedAt = new Date().toISOString()
 
   try {
     const nextRun = options.runState.set(
@@ -134,19 +145,33 @@ async function runCharacterArtifactAnalysis(
       throw new Error("Character analysis run could not be started.")
     }
 
-    for await (const event of nextRun.stream()) {
-      if (event.type !== "assistant") {
-        continue
-      }
+    const collectedRun = await collectCursorRun(nextRun)
+    const analysisFinishedAt = new Date().toISOString()
 
-      for (const block of event.message.content) {
-        if (block.type === "text" && block.text) {
-          rawResponse += block.text
-        }
-      }
+    return {
+      payload: normalizeCharacterArtifactsPayload(collectedRun.text, {
+        agentUsage,
+        assistantText: options.assistantText,
+        characterStateSignature: options.characterStateSignature,
+        model: options.model,
+      }),
+      telemetry: {
+        browserSessionId: options.session.browserSessionId,
+        durationMs: Math.max(0, Date.parse(analysisFinishedAt) - Date.parse(analysisStartedAt)),
+        error: null,
+        finishedAt: analysisFinishedAt,
+        model: options.model,
+        providerSessionId: options.session.providerSessionId,
+        requestRunId: options.session.requestRunId,
+        sdkRunId: nextRun.id,
+        stage: "character-artifacts" as const,
+        startedAt: analysisStartedAt,
+        status: collectedRun.status,
+        statusHistory: collectedRun.statusHistory,
+        toolCalls: collectedRun.toolCalls,
+        usage: collectedRun.usage,
+      },
     }
-
-    await nextRun.wait()
   } finally {
     options.runState.set(previousRun)
 
@@ -157,12 +182,6 @@ async function runCharacterArtifactAnalysis(
     }
   }
 
-  return normalizeCharacterArtifactsPayload(rawResponse, {
-    agentUsage,
-    assistantText: options.assistantText,
-    characterStateSignature: options.characterStateSignature,
-    model: options.model,
-  })
 }
 
 function buildCharacterArtifactPrompt(conversationContext: string, assistantText: string) {

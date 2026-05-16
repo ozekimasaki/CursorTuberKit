@@ -126,6 +126,17 @@ def main() -> int:
         )
         return write_json({"ok": True, "recent_exchanges": recent_exchanges})
 
+    if command == "clear_memory":
+        mk.agent_save(agent_id, dict(DEFAULT_AGENT_MEMORY))
+        mk.channel_save(channel_id, dict(DEFAULT_CHANNEL_MEMORY))
+        mk.log_event(
+            event="Cleared Catlin continuity memory",
+            tags="catlin,continuity,reset",
+            entity="キャットリン",
+            task="catlin-global-memory",
+        )
+        return write_json({"ok": True})
+
     sys.stderr.write(f"unsupported command: {command}\n")
     return 1
 

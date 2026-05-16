@@ -69,6 +69,10 @@ export async function persistMemKraftExchange(payload: StoreExchangePayload) {
   })
 }
 
+export async function clearMemKraftMemory() {
+  await runMemKraftCommand("clear_memory", {})
+}
+
 async function runMemKraftCommand<T>(command: string, payload: unknown): Promise<T> {
   if (!existsSync(helperPath)) {
     throw new MemKraftConfigurationError(`MemKraft helper が見つかりません: ${helperPath}`)

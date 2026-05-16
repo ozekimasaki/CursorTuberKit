@@ -3,7 +3,7 @@
   "hooks": {
     "stop": [
       {
-        "command": "sh scripts/cursor-stop-hook.sh",
+        "command": "node scripts/cursor-stop-hook.mjs",
         "cwd": "."
       }
     ]

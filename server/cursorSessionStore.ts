@@ -1,5 +1,7 @@
 import path from "node:path"
 import { mkdir, readFile, writeFile } from "node:fs/promises"
+import type { CursorPromptMode } from "../shared/cursorPrompt.js"
+import type { CursorTokenUsage } from "./cursorTypes.js"
 
 const CURSOR_SESSION_STORE_DIR = path.join(process.cwd(), ".cursor", "runtime", "chat-sessions")
 
@@ -8,8 +10,10 @@ export type CursorChatSessionRecord = {
   browserSessionId: string
   characterStateSignature: string
   createdAt: string
+  lastPromptMode?: CursorPromptMode
   lastRunId?: string
   lastRunStatus?: "cancelled" | "error" | "finished" | "running"
+  lastUsage?: CursorTokenUsage | null
   model: string
   updatedAt: string
 }
@@ -37,7 +41,8 @@ function resolveCursorSessionPath(browserSessionId: string) {
 }
 
 function sanitizeCursorSessionId(value: string) {
-  return value.replace(/[^a-zA-Z0-9._-]/g, "_")
+  const sanitized = value.replace(/[^a-zA-Z0-9._-]/g, "_")
+  return /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i.test(sanitized) ? `_${sanitized}` : sanitized
 }
 
 function isMissingFileError(error: unknown) {

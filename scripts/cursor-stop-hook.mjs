@@ -88,5 +88,6 @@ async function readAllManifests() {
 }
 
 function sanitizeKey(value) {
-  return value.replace(/[^a-zA-Z0-9._-]/g, "_")
+  const sanitized = value.replace(/[^a-zA-Z0-9._-]/g, "_")
+  return /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i.test(sanitized) ? `_${sanitized}` : sanitized
 }

@@ -1,19 +1,25 @@
 import { randomUUID } from "node:crypto"
 import { access, mkdir, readFile, rm, unlink, writeFile } from "node:fs/promises"
 import path from "node:path"
-import { Agent, type ConversationStep, type Run, type SDKAgent } from "@cursor/sdk"
+import { Agent, type Run, type SDKAgent } from "@cursor/sdk"
+import type { CursorPromptMode } from "../shared/cursorPrompt.js"
 import type { ChatActionPayload, ChatMetadataPayload, ChatSessionPayload } from "../shared/chatStream.js"
 import type { CharacterArtifactsPayload } from "../shared/characterAgents.js"
 import { characterProfile } from "../shared/characterProfile.js"
-import { emotionValues, inferEmotionFromText, type Emotion, type FinalEmotionPayload } from "../shared/emotion.js"
+import { inferEmotionFromText, type FinalEmotionPayload } from "../shared/emotion.js"
 import { deriveCharacterArtifacts } from "./characterAgents.js"
+import { updateCharacterRuntimeSinValuesFromHook } from "./characterRuntimeState.js"
+import { collectCursorRun } from "./cursorSdkRun.js"
 import {
   readCursorChatSessionRecord,
   writeCursorChatSessionRecord,
   type CursorChatSessionRecord,
 } from "./cursorSessionStore.js"
+import { appendCursorTelemetry } from "./cursorTelemetry.js"
+import type { CursorRunTelemetryRecord } from "./cursorTypes.js"
 
 type CursorWorkerInput = {
+  compactPrompt?: string
   compiledPrompt: string
   route: ChatMetadataPayload
   session: {
@@ -33,14 +39,15 @@ type CursorWorkerOutput =
 
 type StopHookPayload = {
   payload?: {
+    status?: string
     conversation_id?: string
     generation_id?: string
     hook_event_name?: string
+    loop_count?: number
   }
   receivedAt?: string
 }
 
-const EMOTION_SUBAGENT_NAME = "emotion-classifier"
 const HOOK_ERROR_LOG_PATH = path.join(process.cwd(), ".cursor", "hook-state", "stop-hook-error.json")
 const HOOK_MANIFEST_DIR = path.join(process.cwd(), ".cursor", "hook-state", "active")
 const HOOK_RUNTIME_DIR = path.join(process.cwd(), ".cursor", "hook-state", "runs")
@@ -65,7 +72,6 @@ const input = await readInput()
 const model = input.route.model
 const selectedModel = { id: model }
 const characterAgentModel = input.route.characterAgentModel ?? model
-const emotionModel = input.route.emotionModel ?? model
 const hookStateDir = resolveHookStateDir(input.session.browserSessionId)
 
 let agent: SDKAgent | null = null
@@ -124,7 +130,11 @@ try {
       name: characterProfile.agentName,
     }))
 
-  run = await startCursorRun(agent, input.compiledPrompt, selectedModel)
+  const promptMode = selectPromptMode(input, resumed)
+  const promptToSend = promptMode === "resume-compact" ? input.compactPrompt?.trim() || input.compiledPrompt : input.compiledPrompt
+  const promptLength = promptToSend.length
+
+  run = await startCursorRun(agent, promptToSend, selectedModel)
   hookManifestPath = await writeHookManifest(run.id, hookStateDir)
 
   const previousRunId = sessionRecord?.lastRunId
@@ -137,6 +147,10 @@ try {
     model,
     run.id,
     "running",
+    {
+      promptMode,
+      usage: null,
+    },
   )
   await writeCursorChatSessionRecord(nextSessionRecord)
   sessionRecord = nextSessionRecord
@@ -149,6 +163,8 @@ try {
       continuedFromRunId: previousRunId,
       provider: "cursor",
       providerSessionId: agent.agentId,
+      promptLength,
+      promptMode,
       resumedAgent: Boolean(resumed),
       reusedAgent,
       runId: run.id,
@@ -157,22 +173,14 @@ try {
     },
   })
 
-  let fullResponseText = ""
+  const mainRunStartedAt = new Date().toISOString()
+  const mainRunResult = await collectCursorRun(run, {
+    onText: (text) => {
+      writeOutput({ type: "text", text })
+    },
+  })
+  const mainRunFinishedAt = new Date().toISOString()
 
-  for await (const event of run.stream()) {
-    if (event.type !== "assistant") {
-      continue
-    }
-
-    for (const block of event.message.content) {
-      if (block.type === "text" && block.text) {
-        fullResponseText += block.text
-        writeOutput({ type: "text", text: block.text })
-      }
-    }
-  }
-
-  const runResult = await run.wait()
   sessionRecord = buildSessionRecord(
     sessionRecord,
     agent.agentId,
@@ -180,10 +188,34 @@ try {
     input.route.characterState.signature,
     model,
     run.id,
-    runResult.status,
+    normalizeCursorRunStatus(mainRunResult.status),
+    {
+      promptMode,
+      usage: mainRunResult.usage,
+    },
   )
   await writeCursorChatSessionRecord(sessionRecord)
-  const normalizedResponse = fullResponseText.trim()
+  await appendRunTelemetry({
+    browserSessionId: input.session.browserSessionId,
+    durationMs: Math.max(0, Date.parse(mainRunFinishedAt) - Date.parse(mainRunStartedAt)),
+    error: null,
+    finishedAt: mainRunFinishedAt,
+    model,
+    promptLength,
+    promptMode,
+    providerSessionId: agent.agentId,
+    requestRunId: run.id,
+    resumedAgent: Boolean(resumed),
+    reusedAgent,
+    sdkRunId: run.id,
+    stage: "main-reply",
+    startedAt: mainRunStartedAt,
+    status: mainRunResult.status,
+    statusHistory: mainRunResult.statusHistory,
+    toolCalls: mainRunResult.toolCalls,
+    usage: mainRunResult.usage,
+  })
+  const normalizedResponse = mainRunResult.text.trim()
 
   if (!normalizedResponse) {
     throw new Error("Cursor から空の応答が返りました。")
@@ -199,13 +231,21 @@ try {
     apiKey,
     assistantText: normalizedResponse,
     characterStateSignature: input.route.characterState.signature,
-    conversationContext: input.compiledPrompt,
+    conversationContext: promptToSend,
     model: characterAgentModel,
+    session: {
+      browserSessionId: input.session.browserSessionId,
+      providerSessionId: agent.agentId,
+      requestRunId: run.id,
+    },
     runState: {
       get: () => run,
       set: restoreActiveRun,
     },
   })
+  if (characterArtifactsResult.telemetry) {
+    await appendRunTelemetry(characterArtifactsResult.telemetry)
+  }
 
   writeOutput({
     type: "character-artifacts",
@@ -231,9 +271,21 @@ try {
 
   try {
     const stopHookPayload = await waitForStopHookPayload(hookStateDir)
-    finalEmotion = await deriveFinalEmotion(normalizedResponse, Boolean(stopHookPayload))
+    finalEmotion = deriveFinalEmotionFromArtifacts(
+      normalizedResponse,
+      characterArtifactsResult.payload,
+      Boolean(stopHookPayload),
+    )
+    const runtimeSinsUpdated = await applyHookDrivenCharacterDrift(characterArtifactsResult.payload, stopHookPayload)
     writeAction({
-      detail: finalEmotion.hookObserved ? "Cursor stop hook observed." : "Cursor stop hook not observed before finalization.",
+      detail:
+        finalEmotion.source === "cursor-subagent"
+          ? finalEmotion.hookObserved
+            ? runtimeSinsUpdated
+              ? "Character Director の感情分析を stop hook 観測つきで確定し、次回向けの感情パラメータも自動更新しました。"
+              : "Character Director の感情分析を stop hook 観測つきで確定しました。"
+            : "Character Director の感情分析を再利用して最終感情を確定しました。"
+          : "Character artifacts が使えないため本文から感情を推定しました。",
       kind: "emotion-finalize",
       provider: "cursor",
       source: finalEmotion.source,
@@ -281,6 +333,10 @@ try {
         model,
         run.id,
         "cancelled",
+        {
+          promptMode: sessionRecord?.lastPromptMode ?? "full-context",
+          usage: sessionRecord?.lastUsage ?? null,
+        },
       ),
     ).catch(() => undefined)
   }
@@ -332,12 +388,29 @@ function writeAction(payload: ChatActionPayload) {
   writeOutput({ type: "action", payload })
 }
 
+async function appendRunTelemetry(record: CursorRunTelemetryRecord) {
+  try {
+    await appendCursorTelemetry(record)
+  } catch (error) {
+    console.warn(`Cursor telemetry write failed: ${error instanceof Error ? error.message : String(error)}`)
+  }
+}
+
+function selectPromptMode(input: CursorWorkerInput, resumedAgent: SDKAgent | null): CursorPromptMode {
+  return resumedAgent && input.compactPrompt?.trim() ? "resume-compact" : "full-context"
+}
+
 async function resumeExistingAgent(
   record: CursorChatSessionRecord | null,
   expectedCharacterStateSignature: string,
   selectedModel: { id: string },
 ) {
-  if (!record?.agentId || record.characterStateSignature !== expectedCharacterStateSignature) {
+  if (
+    !record?.agentId ||
+    record.characterStateSignature !== expectedCharacterStateSignature ||
+    record.model !== selectedModel.id ||
+    record.lastRunStatus === "running"
+  ) {
     return null
   }
 
@@ -394,6 +467,18 @@ function shouldForceLocalRunRetry(error: unknown) {
   )
 }
 
+function normalizeCursorRunStatus(status: string): CursorChatSessionRecord["lastRunStatus"] {
+  switch (status) {
+    case "running":
+    case "finished":
+    case "error":
+    case "cancelled":
+      return status
+    default:
+      return "error"
+  }
+}
+
 function buildSessionRecord(
   existing: CursorChatSessionRecord | null,
   agentId: string,
@@ -402,6 +487,10 @@ function buildSessionRecord(
   sessionModel: string,
   runId: string,
   lastRunStatus: CursorChatSessionRecord["lastRunStatus"],
+  extras: {
+    promptMode: CursorPromptMode
+    usage: CursorChatSessionRecord["lastUsage"]
+  },
 ): CursorChatSessionRecord {
   const timestamp = new Date().toISOString()
 
@@ -410,8 +499,10 @@ function buildSessionRecord(
     browserSessionId,
     characterStateSignature,
     createdAt: existing?.createdAt ?? timestamp,
+    lastPromptMode: extras.promptMode,
     lastRunId: runId,
     lastRunStatus,
+    lastUsage: extras.usage,
     model: sessionModel,
     updatedAt: timestamp,
   }
@@ -421,155 +512,26 @@ function resolveHookStateDir(browserSessionId: string) {
   return path.join(HOOK_RUNTIME_DIR, `${sanitizeHookKey(browserSessionId)}-${process.pid}-${randomUUID()}`)
 }
 
-async function deriveFinalEmotion(assistantText: string, hookObserved: boolean): Promise<FinalEmotionPayload> {
-  try {
-    return await runEmotionAnalysis(assistantText, hookObserved, emotionModel)
-  } catch (error) {
-    if (emotionModel === model) {
-      throw error
-    }
-
-    console.warn(
-      `Cursor emotion analysis with ${emotionModel} failed, retrying with ${model}: ${
-        error instanceof Error ? error.message : "Unknown error."
-      }`,
-    )
-    return runEmotionAnalysis(assistantText, hookObserved, model)
-  }
-}
-
-async function runEmotionAnalysis(
+function deriveFinalEmotionFromArtifacts(
   assistantText: string,
+  artifacts: CharacterArtifactsPayload,
   hookObserved: boolean,
-  analysisModel: string,
-): Promise<FinalEmotionPayload> {
-  const selectedModel = { id: analysisModel }
-  const emotionAgent = await Agent.create({
-    agents: {
-      [EMOTION_SUBAGENT_NAME]: {
-        description: "Catlin の完成済み返答から最終アバター感情を 1 つに分類する専門サブエージェント",
-        model: selectedModel,
-        prompt: [
-          "あなたは Catlin のアバター感情を確定する専門サブエージェントです。",
-          `許可される感情は ${emotionValues.join(", ")} のみです。`,
-          "入力された完成済みの日本語返答全体を読み、アバターの最終感情を1つだけ決めてください。",
-          '返答は JSON のみで、形式は {"emotion":"neutral|joy|anger|sadness|delight","confidence":0.0,"reason":"短い日本語"} にしてください。',
-          "Markdown や追加説明は付けないでください。",
-        ].join("\n"),
-      },
-    },
-    apiKey,
-    local: { cwd: process.cwd() },
-    model: selectedModel,
-    name: `${characterProfile.agentName} Emotion Analyzer`,
-  })
+): FinalEmotionPayload {
+  const derivedEmotion = artifacts.director.focusEmotion
 
-  let usedEmotionSubagent = false
-  let rawEmotionResponse = ""
-  const previousRun = run
-
-  try {
-    run = setActiveRun(
-      await emotionAgent.send(buildEmotionAnalysisPrompt(assistantText), {
-        model: selectedModel,
-        onStep: ({ step }) => {
-          if (isEmotionSubagentStep(step)) {
-            usedEmotionSubagent = true
-          }
-        },
-      }),
-    )
-
-    for await (const event of run.stream()) {
-      if (event.type !== "assistant") {
-        continue
-      }
-
-      for (const block of event.message.content) {
-        if (block.type === "text" && block.text) {
-          rawEmotionResponse += block.text
-        }
-      }
-    }
-
-    await run.wait()
-  } finally {
-    run = previousRun
-
-    if (typeof emotionAgent[Symbol.asyncDispose] === "function") {
-      await emotionAgent[Symbol.asyncDispose]()
-    } else {
-      emotionAgent.close()
+  if (!derivedEmotion) {
+    return {
+      emotion: inferEmotionFromText(assistantText),
+      hookObserved,
+      source: "text-inference",
     }
   }
 
-  if (!usedEmotionSubagent) {
-    console.warn(`Cursor emotion analysis completed without an observed subagent task step (${analysisModel}).`)
-  }
-
-  const parsed = parseEmotionResponse(rawEmotionResponse)
   return {
-    emotion: parsed.emotion,
+    emotion: derivedEmotion,
     hookObserved,
-    source: "cursor-subagent",
+    source: artifacts.source === "cursor-subagents" ? "cursor-subagent" : "text-inference",
   }
-}
-
-function buildEmotionAnalysisPrompt(assistantText: string) {
-  return [
-    `必ず ${EMOTION_SUBAGENT_NAME} サブエージェントを使ってください。`,
-    "完成済み返答の最終感情パラメータを 1 つだけ確定してください。",
-    `利用可能な感情は ${emotionValues.join(", ")} のみです。`,
-    '最終回答は JSON のみで {"emotion":"...","confidence":0.0,"reason":"短い日本語"} にしてください。',
-    "",
-    "対象返答:",
-    assistantText,
-  ].join("\n")
-}
-
-function isEmotionSubagentStep(step: ConversationStep) {
-  return (
-    step.type === "toolCall" &&
-    step.message.type === "task" &&
-    step.message.args.subagentType?.name === EMOTION_SUBAGENT_NAME
-  )
-}
-
-function parseEmotionResponse(rawResponse: string) {
-  const normalized = rawResponse.trim()
-
-  if (!normalized) {
-    throw new Error("Cursor emotion subagent returned an empty response.")
-  }
-
-  const jsonCandidate = extractJsonObject(normalized)
-  const parsed = JSON.parse(jsonCandidate) as { emotion?: unknown }
-
-  if (!isEmotion(parsed.emotion)) {
-    throw new Error(`Cursor emotion subagent returned an invalid emotion: ${jsonCandidate}`)
-  }
-
-  return {
-    emotion: parsed.emotion,
-  }
-}
-
-function extractJsonObject(rawResponse: string) {
-  if (rawResponse.startsWith("{") && rawResponse.endsWith("}")) {
-    return rawResponse
-  }
-
-  const match = rawResponse.match(/\{[\s\S]*?\}/)
-
-  if (!match) {
-    throw new Error(`Cursor emotion subagent did not return JSON: ${rawResponse}`)
-  }
-
-  return match[0]
-}
-
-function isEmotion(value: unknown): value is Emotion {
-  return typeof value === "string" && emotionValues.includes(value as Emotion)
 }
 
 async function waitForStopHookPayload(stateDir: string) {
@@ -602,6 +564,24 @@ async function waitForStopHookPayload(stateDir: string) {
 
   console.warn("Cursor stop hook marker was not observed before emotion finalization.")
   return null
+}
+
+async function applyHookDrivenCharacterDrift(
+  artifacts: CharacterArtifactsPayload,
+  stopHookPayload: StopHookPayload | null,
+) {
+  if (stopHookPayload?.payload?.status !== "completed" || artifacts.source !== "cursor-subagents") {
+    return false
+  }
+
+  try {
+    await updateCharacterRuntimeSinValuesFromHook(artifacts.director.sevenDeadlySins)
+    return true
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown hook drift error."
+    console.warn(`Cursor hook-driven character drift update failed: ${message}`)
+    return false
+  }
 }
 
 async function writeHookManifest(runId: string, stateDir: string) {
@@ -654,5 +634,6 @@ function wait(durationMs: number) {
 }
 
 function sanitizeHookKey(value: string) {
-  return value.replace(/[^a-zA-Z0-9._-]/g, "_")
+  const sanitized = value.replace(/[^a-zA-Z0-9._-]/g, "_")
+  return /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i.test(sanitized) ? `_${sanitized}` : sanitized
 }

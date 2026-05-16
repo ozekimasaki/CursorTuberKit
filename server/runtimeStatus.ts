@@ -1,6 +1,7 @@
 import { appendFile, mkdir, writeFile } from "node:fs/promises"
 import path from "node:path"
 import type { CharacterArtifactsPayload } from "../shared/characterAgents.js"
+import type { CursorPromptMode } from "../shared/cursorPrompt.js"
 import type { CharacterStateMetadata } from "../shared/characterState.js"
 import type { FinalEmotionPayload } from "../shared/emotion.js"
 import { createIdlePlatformChatState, type PlatformChatState } from "../shared/platformChat.js"
@@ -9,6 +10,7 @@ import {
   CHARACTER_ARTIFACT_FILES,
   type CharacterArtifactPersistenceSummary,
 } from "./characterArtifacts.js"
+import { CURSOR_TELEMETRY_FILE } from "./cursorTelemetry.js"
 import type { VoicevoxHealth } from "./voicevox.js"
 
 const RECENT_RUN_LIMIT = 12
@@ -23,6 +25,7 @@ type ActiveChatRun = {
   characterStateSignature: string
   emotion: FinalEmotionPayload | null
   promptLength: number
+  promptMode: CursorPromptMode
   provider: AiProvider
   recentTurnsCount: number
   responseLength: number
@@ -41,6 +44,7 @@ export type ChatRunRecap = {
   id: string
   memKraftPersisted: boolean
   promptLength: number
+  promptMode: CursorPromptMode
   provider: AiProvider
   recentTurnsCount: number
   responseLength: number
@@ -51,12 +55,13 @@ export type ChatRunRecap = {
 
 type RuntimeStatusSnapshot = {
   artifacts: {
-    characterAgentLog: string
-    characterArtifactsHistoryLog: string
-    characterArtifactsLatest: string
-    loreCardsFile: string
-    recentRunsLog: string
-    relationshipsFile: string
+      characterAgentLog: string
+      characterArtifactsHistoryLog: string
+      characterArtifactsLatest: string
+      cursorTelemetryLog: string
+      loreCardsFile: string
+      recentRunsLog: string
+      relationshipsFile: string
     statusFile: string
     streamDiaryFile: string
     teaserFile: string
@@ -141,6 +146,7 @@ export class RuntimeStatusTracker {
       characterStateSignature: input.characterStateSignature,
       emotion: null,
       promptLength: input.promptLength,
+      promptMode: "full-context",
       provider: input.provider,
       recentTurnsCount: input.recentTurnsCount,
       responseLength: 0,
@@ -170,6 +176,23 @@ export class RuntimeStatusTracker {
     }
 
     run.emotion = emotion
+  }
+
+  setChatPromptDetails(
+    runId: string,
+    input: {
+      promptLength: number
+      promptMode: CursorPromptMode
+    },
+  ) {
+    const run = this.activeChatRuns.get(runId)
+
+    if (!run) {
+      return
+    }
+
+    run.promptLength = input.promptLength
+    run.promptMode = input.promptMode
   }
 
   setChatCharacterArtifacts(runId: string, artifacts: CharacterArtifactsPayload) {
@@ -210,6 +233,7 @@ export class RuntimeStatusTracker {
       id: runId,
       memKraftPersisted: output.memKraftPersisted === true,
       promptLength: run.promptLength,
+      promptMode: run.promptMode,
       provider: run.provider,
       recentTurnsCount: run.recentTurnsCount,
       responseLength: run.responseLength,
@@ -245,6 +269,7 @@ export class RuntimeStatusTracker {
         characterAgentLog: path.relative(process.cwd(), CHARACTER_AGENT_LOG_FILE),
         characterArtifactsHistoryLog: path.relative(process.cwd(), CHARACTER_ARTIFACT_FILES.historyLogFile),
         characterArtifactsLatest: path.relative(process.cwd(), CHARACTER_ARTIFACT_FILES.latestBundleFile),
+        cursorTelemetryLog: path.relative(process.cwd(), CURSOR_TELEMETRY_FILE),
         loreCardsFile: path.relative(process.cwd(), CHARACTER_ARTIFACT_FILES.loreCardsFile),
         recentRunsLog: path.relative(process.cwd(), RUN_LOG_FILE),
         relationshipsFile: path.relative(process.cwd(), CHARACTER_ARTIFACT_FILES.relationshipsFile),

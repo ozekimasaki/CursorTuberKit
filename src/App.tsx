@@ -4,7 +4,9 @@ import {
   type AutomationEnvelope,
   type ChatAutomationRequest,
 } from "../shared/automation"
+import type { CharacterPreset, CharacterPresetInput } from "../shared/characterPresets"
 import type { ChatMetadataPayload, ChatSessionPayload } from "../shared/chatStream"
+import { createDefaultChatSettings, type ChatSettings } from "../shared/chatSettings"
 import { characterProfile } from "../shared/characterProfile"
 import type { Emotion, FinalEmotionPayload } from "../shared/emotion"
 import type { ModerationAssessment } from "../shared/moderation"
@@ -35,6 +37,15 @@ import {
   startPlatformChat,
   stopPlatformChat,
 } from "./lib/platformChat"
+import {
+  clearChatMemory,
+  createCharacterPreset,
+  deleteCharacterPreset,
+  fetchCharacterPresets,
+  fetchChatSettings,
+  updateCharacterPreset as saveCharacterPreset,
+  updateChatSettings,
+} from "./lib/chatSettings"
 import {
   streamAiResponse,
   type ConversationTurn,
@@ -373,6 +384,12 @@ export function App() {
   const [platformState, setPlatformState] = useState<PlatformChatState>(createIdlePlatformChatState())
   const [liveViewerEvents, setLiveViewerEvents] = useState<PlatformViewerEvent[]>([])
   const [autoReplyEnabled, setAutoReplyEnabled] = useState(false)
+  const [chatSettings, setChatSettings] = useState<ChatSettings>(createDefaultChatSettings)
+  const [characterPresets, setCharacterPresets] = useState<CharacterPreset[]>([])
+  const [chatSettingsAction, setChatSettingsAction] = useState<"idle" | "saving" | "clearing">("idle")
+  const [chatSettingsNotice, setChatSettingsNotice] = useState<string | null>(null)
+  const [characterPresetBusy, setCharacterPresetBusy] = useState(false)
+  const [characterPresetNotice, setCharacterPresetNotice] = useState<string | null>(null)
   const [stageBackgroundMedia, setStageBackgroundMedia] = useState<StageBackgroundMedia | null>(null)
   const [motionPngAssetStatus, setMotionPngAssetStatus] =
     useState<MotionPngAssetStatus>(defaultMotionPngAssetStatus)
@@ -382,12 +399,14 @@ export function App() {
   const abortRef = useRef<AbortController | null>(null)
   const avatarModeRef = useRef<AvatarMode>(avatarMode)
   const autoReplyEnabledRef = useRef(autoReplyEnabled)
+  const liveViewerEventsRef = useRef<PlatformViewerEvent[]>([])
   const recentTurnsRef = useRef<ConversationTurn[]>([])
   const autoReplyGenerationCountRef = useRef(0)
   const autoReplyEventQueueRef = useRef<PlatformViewerEvent[]>([])
   const autoReplyRetryCountsRef = useRef<Map<string, number>>(new Map())
   const autoReplyRetryTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
   const autoReplySeenEventIdsRef = useRef<Set<string>>(new Set())
+  const autoReplySeenScopeRef = useRef<string | null>(null)
   const bridgeSpeechCacheRef = useRef<Map<string, Blob>>(new Map())
   const preparedAutoReplyQueueRef = useRef<PreparedAutoReply[]>([])
   const preparedAutoReplySequenceRef = useRef(0)
@@ -458,6 +477,38 @@ export function App() {
       })
       .catch(() => {
         // ignore initial runtime status failures
+      })
+
+    return () => abortController.abort()
+  }, [])
+
+  useEffect(() => {
+    const abortController = new AbortController()
+
+    fetchChatSettings(abortController.signal)
+      .then((settings) => {
+        setChatSettings(settings)
+      })
+      .catch((error) => {
+        if (!isAbortError(error)) {
+          showError(error instanceof Error ? error.message : "設定の取得に失敗しました。")
+        }
+      })
+
+    return () => abortController.abort()
+  }, [])
+
+  useEffect(() => {
+    const abortController = new AbortController()
+
+    fetchCharacterPresets(abortController.signal)
+      .then((presets) => {
+        setCharacterPresets(presets)
+      })
+      .catch((error) => {
+        if (!isAbortError(error)) {
+          showError(error instanceof Error ? error.message : "プリセットの取得に失敗しました。")
+        }
       })
 
     return () => abortController.abort()
@@ -557,6 +608,7 @@ export function App() {
       autoContentExpandedViewerEventsRef.current = new Set()
       autoContentSequenceRef.current = 0
       autoContentSessionBaseRef.current = null
+      autoReplySeenScopeRef.current = null
       return
     }
 
@@ -587,6 +639,10 @@ export function App() {
   }, [recentTurns])
 
   useEffect(() => {
+    liveViewerEventsRef.current = liveViewerEvents
+  }, [liveViewerEvents])
+
+  useEffect(() => {
     if (!autoReplyEnabled) {
       return
     }
@@ -604,7 +660,6 @@ export function App() {
     autoContentSequenceRef.current = 0
     autoContentExpandedViewerEventsRef.current = new Set()
     autoContentScheduledKeyRef.current = null
-    autoReplySeenEventIdsRef.current = new Set()
   }, [autoReplyEnabled, platformState.mode, platformState.status, platformState.target])
 
   useEffect(() => {
@@ -612,13 +667,28 @@ export function App() {
       return
     }
 
-    for (const viewerEvent of [...liveViewerEvents].reverse()) {
+    const nextSeenScope = `${platformState.mode ?? "chat"}:${platformState.target ?? "default"}`
+
+    if (autoReplySeenScopeRef.current === nextSeenScope) {
+      return
+    }
+
+    autoReplySeenScopeRef.current = nextSeenScope
+    autoReplySeenEventIdsRef.current = new Set()
+  }, [autoReplyEnabled, platformState.mode, platformState.target])
+
+  useEffect(() => {
+    if (!autoReplyEnabled) {
+      return
+    }
+
+    for (const viewerEvent of [...liveViewerEventsRef.current].reverse()) {
       enqueueAutoReplyEvent(viewerEvent)
     }
 
     void pumpAutoReplyGenerationQueue()
     void pumpPreparedAutoReplyQueue()
-  }, [autoReplyEnabled, liveViewerEvents])
+  }, [autoReplyEnabled])
 
   useEffect(() => {
     const abortController = new AbortController()
@@ -1130,7 +1200,7 @@ export function App() {
     autoReplyRetryCountsRef.current.delete(event.id)
     clearAutoReplyRetryTimer(event.id)
 
-    const prompt = buildAutoReplyPrompt(event)
+    const prompt = buildAutoReplyPrompt(event, currentCharacterName)
     const result = await streamPromptReply({
       automation: {
         replyStyle: "default",
@@ -1170,6 +1240,106 @@ export function App() {
     autoContentAbortRef.current?.abort()
     autoContentScheduledKeyRef.current = null
     await runPrompt(prompt, { interruptCurrent: true })
+  }
+
+  async function handleChatSettingsSave(nextSettings: ChatSettings) {
+    setChatSettingsAction("saving")
+    setChatSettingsNotice(null)
+    setCharacterPresetNotice(null)
+
+    try {
+      const saved = await updateChatSettings({
+        characterName: nextSettings.characterName,
+        characterPrompt: nextSettings.characterPrompt,
+        characterState: nextSettings.characterState,
+        memory: nextSettings.memory,
+      })
+      setChatSettings(saved)
+      setChatSettingsNotice("キャラクター名・キャラクター設定・7軸・長期記憶設定を保存しました。")
+    } catch (error) {
+      if (!isAbortError(error)) {
+        showError(error instanceof Error ? error.message : "設定の保存に失敗しました。")
+      }
+    } finally {
+      setChatSettingsAction("idle")
+    }
+  }
+
+  async function handleCharacterPresetCreate(input: CharacterPresetInput) {
+    setCharacterPresetBusy(true)
+    setCharacterPresetNotice(null)
+    setChatSettingsNotice(null)
+
+    try {
+      const created = await createCharacterPreset(input)
+      setCharacterPresets((current) => [...current, created])
+      setCharacterPresetNotice(`プリセット「${created.label}」を保存しました。`)
+      return created
+    } catch (error) {
+      if (!isAbortError(error)) {
+        showError(error instanceof Error ? error.message : "プリセットの保存に失敗しました。")
+      }
+      return null
+    } finally {
+      setCharacterPresetBusy(false)
+    }
+  }
+
+  async function handleCharacterPresetUpdate(presetId: string, input: CharacterPresetInput) {
+    setCharacterPresetBusy(true)
+    setCharacterPresetNotice(null)
+    setChatSettingsNotice(null)
+
+    try {
+      const updated = await saveCharacterPreset(presetId, input)
+      setCharacterPresets((current) => current.map((preset) => (preset.id === updated.id ? updated : preset)))
+      setCharacterPresetNotice(`プリセット「${updated.label}」を更新しました。`)
+      return updated
+    } catch (error) {
+      if (!isAbortError(error)) {
+        showError(error instanceof Error ? error.message : "プリセットの更新に失敗しました。")
+      }
+      return null
+    } finally {
+      setCharacterPresetBusy(false)
+    }
+  }
+
+  async function handleCharacterPresetDelete(presetId: string) {
+    setCharacterPresetBusy(true)
+    setCharacterPresetNotice(null)
+    setChatSettingsNotice(null)
+
+    try {
+      await deleteCharacterPreset(presetId)
+      setCharacterPresets((current) => current.filter((preset) => preset.id !== presetId))
+      setCharacterPresetNotice("プリセットを削除しました。")
+      return true
+    } catch (error) {
+      if (!isAbortError(error)) {
+        showError(error instanceof Error ? error.message : "プリセットの削除に失敗しました。")
+      }
+      return false
+    } finally {
+      setCharacterPresetBusy(false)
+    }
+  }
+
+  async function handleChatMemoryClear() {
+    setChatSettingsAction("clearing")
+    setChatSettingsNotice(null)
+    setCharacterPresetNotice(null)
+
+    try {
+      await clearChatMemory()
+      setChatSettingsNotice("MemKraft の長期記憶をクリアしました。次の返答から新しい流れで組み直します。")
+    } catch (error) {
+      if (!isAbortError(error)) {
+        showError(error instanceof Error ? error.message : "長期記憶のクリアに失敗しました。")
+      }
+    } finally {
+      setChatSettingsAction("idle")
+    }
   }
 
   async function handlePlatformStart() {
@@ -1596,8 +1766,8 @@ export function App() {
       const primaryEvent = selectedEvents[0]!
       const shortReplyMode = compactBatch !== null || shouldUseShortAutoReplyMode(autoReplyEventQueueRef.current.length)
       const prompt = compactBatch
-        ? buildCompactAutoReplyPrompt(selectedEvents)
-        : buildAutoReplyPrompt(primaryEvent, { shortReply: shortReplyMode })
+        ? buildCompactAutoReplyPrompt(selectedEvents, currentCharacterName)
+        : buildAutoReplyPrompt(primaryEvent, currentCharacterName, { shortReply: shortReplyMode })
       const automationRequest: ChatAutomationRequest = {
         replyStyle: compactBatch ? "compact" : shortReplyMode ? "short" : "default",
         source: "platform_auto_reply",
@@ -1979,6 +2149,13 @@ export function App() {
       }),
     [finalEmotionPayload, latestRunRecap, liveViewerEvents, providerMetadata, recentTurns, responseText, sessionMetadata],
   )
+  const currentCharacterName = chatSettings.characterName.trim() || characterProfile.name
+  const autoReplyPendingCount =
+    autoReplyGenerationCountRef.current +
+    autoReplyEventQueueRef.current.length +
+    preparedAutoReplyQueueRef.current.length +
+    (preparedAutoReplyPlaybackBusyRef.current ? 1 : 0)
+  const latestViewerEventAgeLabel = formatRelativeTimestamp(platformState.lastEventAt ?? liveViewerEvents[0]?.receivedAt ?? null)
   const nextAutomaticContentCandidate = useMemo(
     () =>
       selectAutomaticContentSuggestion({
@@ -2100,27 +2277,45 @@ export function App() {
       <header className="topbar">
         <div className="brand">
           <span className="brand__dot" aria-hidden="true" />
-          <span className="brand__name">{characterProfile.name}</span>
+          <span className="brand__name">{currentCharacterName}</span>
           <span className="brand__tag">{characterProfile.eyebrow}</span>
         </div>
         <div className="topbar__spacer" />
-        <button
-          className={`topbar__mode-btn${streamScreenMode ? " topbar__mode-btn--active" : ""}`}
-          type="button"
-          onClick={() => handleStreamScreenModeChange(!streamScreenMode)}
-        >
-          {streamScreenMode ? "配信画面中" : "配信画面"}
-        </button>
-        <span className={`status-pill status-pill--${status}`}>{stageStatusLabel[status]}</span>
-        <button
-          className={`icon-btn${voiceEnabled ? " icon-btn--active" : ""}`}
-          type="button"
-          aria-label={voiceEnabled ? "音声をオフにする" : "音声をオンにする"}
-          title={voiceEnabled ? "音声: オン" : "音声: オフ"}
-          onClick={() => setVoiceEnabled(!voiceEnabled)}
-        >
-          {voiceEnabled ? "🔊" : "🔇"}
-        </button>
+        <div className="topbar__status-strip">
+          <span className={`runtime-chip runtime-chip--${runtimeDisplay.tone}`}>{runtimeDisplay.label}</span>
+          <span className={`info-chip info-chip--${platformState.status === "connected" ? "ok" : platformState.status === "error" ? "err" : platformState.status === "connecting" ? "warn" : "muted"}`}>
+            {platformState.status === "connected"
+              ? `${platformState.mode ?? "chat"} 接続中`
+              : platformState.status === "connecting"
+                ? "チャット接続中"
+                : platformState.status === "error"
+                  ? "チャット接続エラー"
+                  : "チャット未接続"}
+          </span>
+          <span className={`info-chip info-chip--${autoReplyEnabled ? "ok" : "muted"}`}>
+            自動返答 {autoReplyEnabled ? "ON" : "OFF"}
+          </span>
+          <span className="info-chip info-chip--muted">処理待ち {autoReplyPendingCount}</span>
+          {latestViewerEventAgeLabel && <span className="info-chip info-chip--muted">最終 {latestViewerEventAgeLabel}</span>}
+        </div>
+        <div className="topbar__actions">
+          <button
+            className={`topbar__mode-btn${streamScreenMode ? " topbar__mode-btn--active" : ""}`}
+            type="button"
+            onClick={() => handleStreamScreenModeChange(!streamScreenMode)}
+          >
+            {streamScreenMode ? "配信用HUD中" : "配信用HUD"}
+          </button>
+          <button
+            className={`icon-btn${voiceEnabled ? " icon-btn--active" : ""}`}
+            type="button"
+            aria-label={voiceEnabled ? "音声をオフにする" : "音声をオンにする"}
+            title={voiceEnabled ? "音声: オン" : "音声: オフ"}
+            onClick={() => setVoiceEnabled(!voiceEnabled)}
+          >
+            {voiceEnabled ? "🔊" : "🔇"}
+          </button>
+        </div>
       </header>
 
       <section className="caption" aria-live="polite" aria-label="ライブキャプション">
@@ -2128,16 +2323,10 @@ export function App() {
           <div className="caption__meta">
             <p className="caption__label">
               <span className="caption__live" aria-hidden="true" />
-              LIVE CAPTION
+              NOW SPEAKING
             </p>
-            <div className="caption__runtime">
-              <span className={`runtime-chip runtime-chip--${runtimeDisplay.tone}`}>
-                {runtimeDisplay.label}
-              </span>
-              {runtimeDisplay.detail && <span className="caption__runtime-detail">{runtimeDisplay.detail}</span>}
-            </div>
+            {runtimeDisplay.detail && <p className="caption__support">{runtimeDisplay.detail}</p>}
           </div>
-          <span className={`status-pill status-pill--${status}`}>{stageStatusLabel[status]}</span>
         </div>
         <p className={`caption__text${captionText ? "" : " caption__text--placeholder"}`}>
           {captionText || characterProfile.idleCaption}
@@ -2148,18 +2337,37 @@ export function App() {
         <section className="viewer-overlay" aria-label="受信コメントオーバーレイ">
           <div className="viewer-overlay__card">
             <div className="viewer-overlay__head">
-              <p className="viewer-overlay__label">LIVE COMMENTS</p>
-              <div className="viewer-overlay__badges">
-                <span className="viewer-overlay__count">{liveViewerEvents.length}件</span>
-                <span className={`viewer-overlay__status viewer-overlay__status--${platformState.status}`}>
-                {platformState.status === "connected"
-                  ? `${platformState.mode ?? "chat"} 接続中`
-                  : platformState.status === "connecting"
-                    ? "接続中..."
-                    : platformState.status === "error"
-                      ? "接続エラー"
-                      : "未接続"}
-                </span>
+              <div className="viewer-overlay__meta">
+                <p className="viewer-overlay__label">STREAM HUD</p>
+                <div className="viewer-overlay__badges">
+                  <span className={`runtime-chip runtime-chip--${runtimeDisplay.tone}`}>{runtimeDisplay.label}</span>
+                  <span className={`viewer-overlay__status viewer-overlay__status--${platformState.status}`}>
+                    {platformState.status === "connected"
+                      ? `${platformState.mode ?? "chat"} 接続中`
+                      : platformState.status === "connecting"
+                        ? "接続中..."
+                        : platformState.status === "error"
+                          ? "接続エラー"
+                          : "未接続"}
+                  </span>
+                  <span className="viewer-overlay__count">{liveViewerEvents.length}件</span>
+                  <span className={`info-chip info-chip--${autoReplyEnabled ? "ok" : "muted"}`}>
+                    自動返答 {autoReplyEnabled ? "ON" : "OFF"}
+                  </span>
+                  {visibleError && <span className="info-chip info-chip--err">要確認</span>}
+                </div>
+              </div>
+              <div className="viewer-overlay__actions">
+                {isBusy && (
+                  <button className="viewer-overlay__action viewer-overlay__action--danger" type="button" onClick={handleCancel}>
+                    中断
+                  </button>
+                )}
+                {!dockOpen && (
+                  <button className="viewer-overlay__action" type="button" onClick={() => setDockOpen(true)}>
+                    操作を開く
+                  </button>
+                )}
               </div>
             </div>
             <ViewerEventFeed events={liveViewerEvents} />
@@ -2187,7 +2395,6 @@ export function App() {
           className="fab"
           type="button"
           onClick={() => {
-            setStreamScreenMode(false)
             setDockOpen(true)
           }}
           aria-label="操作ドックを開く"
@@ -2228,7 +2435,6 @@ export function App() {
         onMotionPngFolderSelect={handleMotionPngFolderSelect}
         onMotionPngSettingChange={updateMotionPngSettings}
         onStreamScreenModeChange={handleStreamScreenModeChange}
-        errorMessage={errorMessage}
         onCancel={handleCancel}
         onSubmit={handlePrompt}
         responseText={responseText}
@@ -2247,15 +2453,30 @@ export function App() {
         latestModeration={latestModeration}
         latestAutomationPolicy={latestAutomationEnvelope?.policy ?? platformState.automationPolicy}
         autoReplyEnabled={autoReplyEnabled}
+        autoReplyPendingCount={autoReplyPendingCount}
+        chatMemoryClearBusy={chatSettingsAction === "clearing"}
+        characterPresetBusy={characterPresetBusy}
+        characterPresetNotice={characterPresetNotice}
+        characterPresets={characterPresets}
+        chatSettings={chatSettings}
+        chatSettingsBusy={chatSettingsAction === "saving"}
+        chatSettingsNotice={chatSettingsNotice}
+        errorMessage={visibleError}
         motionPngAssetStatus={motionPngAssetStatus}
         motionPngFolderLabel={motionPngFolderLabel}
         motionPngSettings={motionPngSettings}
+        recentTurns={recentTurns}
         streamScreenMode={streamScreenMode}
         onAutoReplyEnabledChange={setAutoReplyEnabled}
         onPlatformModeChange={setPlatformMode}
         onPlatformStart={handlePlatformStart}
         onPlatformStop={handlePlatformStop}
         onPlatformTargetChange={setPlatformTarget}
+        onCharacterPresetCreate={handleCharacterPresetCreate}
+        onCharacterPresetDelete={handleCharacterPresetDelete}
+        onCharacterPresetUpdate={handleCharacterPresetUpdate}
+        onChatMemoryClear={handleChatMemoryClear}
+        onChatSettingsSave={handleChatSettingsSave}
         onUseContentSuggestion={handlePrompt}
         onVoiceEnabledChange={setVoiceEnabled}
       />
@@ -2413,6 +2634,7 @@ async function generatePromptResponse(
 
 function buildAutoReplyPrompt(
   event: PlatformViewerEvent,
+  characterName: string,
   options?: {
     shortReply?: boolean
   },
@@ -2420,8 +2642,8 @@ function buildAutoReplyPrompt(
   const monetizationText = event.monetization?.amountText ? ` / ${event.monetization.amountText}` : ""
   const eventKindLabel = describeEventKind(event)
   const replyInstruction = options?.shortReply
-    ? "Catlin本人として、そのまま配信で話す感じで、1〜2文の短い返事をすぐ返してください。"
-    : "Catlin本人として、そのまま配信で話す感じで自然に返事してください。"
+    ? `${characterName}本人として、そのまま配信で話す感じで、1〜2文の短い返事をすぐ返してください。`
+    : `${characterName}本人として、そのまま配信で話す感じで自然に返事してください。`
 
   return [
     `配信中の視聴者コメントです。${event.authorName}さんが ${event.platform} で送ってくれました。`,
@@ -2431,12 +2653,12 @@ function buildAutoReplyPrompt(
   ].join("\n")
 }
 
-function buildCompactAutoReplyPrompt(events: PlatformViewerEvent[]) {
+function buildCompactAutoReplyPrompt(events: PlatformViewerEvent[], characterName: string) {
   return [
     "配信中に続けて届いた複数の視聴者コメントです。",
     "全部に均等に返さなくてよいですが、圧縮しすぎず、主軸1件に加えて近い話題ならもう1件まで自然に拾ってください。",
     "無理に全部をまとめず、拾ったコメントの内容がちゃんと残る返しにしてください。",
-    "Catlin本人として、そのまま配信で話せる返答を1〜3文で返してください。",
+    `${characterName}本人として、そのまま配信で話せる返答を1〜3文で返してください。`,
     ...events.map((event) => `- ${event.authorName}: ${event.text}`),
   ].join("\n")
 }
@@ -2490,7 +2712,52 @@ function readSseData<T>(event: Event) {
 }
 
 function isAbortError(error: unknown) {
-  return error instanceof Error && error.name === "AbortError"
+  if (!(error instanceof Error)) {
+    return false
+  }
+
+  if (error.name === "AbortError") {
+    return true
+  }
+
+  const message = error.message.toLowerCase()
+  return message.includes("signal is aborted without reason") || message.includes("the operation was aborted")
+}
+
+function formatRelativeTimestamp(value: string | null) {
+  if (!value) {
+    return null
+  }
+
+  const timestamp = Date.parse(value)
+
+  if (Number.isNaN(timestamp)) {
+    return null
+  }
+
+  const diffSeconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000))
+
+  if (diffSeconds < 10) {
+    return "たった今"
+  }
+
+  if (diffSeconds < 60) {
+    return `${diffSeconds}秒前`
+  }
+
+  const diffMinutes = Math.floor(diffSeconds / 60)
+
+  if (diffMinutes < 60) {
+    return `${diffMinutes}分前`
+  }
+
+  const diffHours = Math.floor(diffMinutes / 60)
+
+  if (diffHours < 24) {
+    return `${diffHours}時間前`
+  }
+
+  return `${Math.floor(diffHours / 24)}日前`
 }
 
 function waitForQueuedPlaybackGap(signal: AbortSignal) {
