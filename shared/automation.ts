@@ -41,7 +41,12 @@ export type AutomationEnvelope = {
   policy: AutomationPolicy
 }
 
+export const chatAutomationReplyStyles = ["default", "short", "compact"] as const
+
+export type ChatAutomationReplyStyle = (typeof chatAutomationReplyStyles)[number]
+
 export type ChatAutomationRequest = {
+  replyStyle?: ChatAutomationReplyStyle
   source: "manual" | "platform_auto_reply"
   target?: AutomationTarget
 }
@@ -74,11 +79,9 @@ export function createInAppReplyAutomationAction(options: {
   const requestedLevel =
     moderation.disposition === "block"
       ? "suggestion_only"
-      : moderation.disposition === "review"
-        ? "approval_required"
-        : policy.allowInAppAutoExecution
-          ? "auto_executable"
-          : "approval_required"
+      : policy.allowInAppAutoExecution
+        ? "auto_executable"
+        : "approval_required"
   const executionLevel = clampAutomationExecutionLevel(requestedLevel, policy.maxExecutionLevel)
   const status = moderation.disposition === "block" ? "blocked" : "ready"
 
@@ -121,5 +124,5 @@ function describeAutomationDetail(moderation: ModerationAssessment) {
     ? moderation.reasons.join(" / ")
     : moderation.disposition === "block"
       ? "安全確認のため自動実行を停止しました。"
-      : "安全確認のため承認を挟みます。"
+      : "注意付きの内容ですが、アプリ内自動再生は継続します。"
 }

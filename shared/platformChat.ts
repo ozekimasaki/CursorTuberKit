@@ -59,8 +59,8 @@ export function createIdlePlatformChatState(): PlatformChatState {
     autoReplyScope: "in_app_only",
     automationPolicy: {
       allowExternalExecution: false,
-      allowInAppAutoExecution: false,
-      maxExecutionLevel: "approval_required",
+      allowInAppAutoExecution: true,
+      maxExecutionLevel: "auto_executable",
     },
     lastError: null,
     lastEventAt: null,

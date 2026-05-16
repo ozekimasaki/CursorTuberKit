@@ -1,7 +1,9 @@
-import { Innertube } from "youtubei.js"
+import { Innertube, Log, Parser } from "youtubei.js"
 import { createAllowModerationAssessment } from "../../shared/moderation.js"
 import type { PlatformViewerEvent } from "../../shared/platformChat.js"
 import { PlatformChatSource, asError, isRecord, normalizeViewerText, numberToCssColor } from "../platformChatSource.js"
+
+let youtubeJsRuntimeConfigured = false
 
 type YouTubeLiveChat = {
   on(type: "chat-update", listener: (action: unknown) => void): void
@@ -21,6 +23,8 @@ export class YouTubeChatSource extends PlatformChatSource {
   }
 
   async connect(target: string) {
+    configureYouTubeJsRuntime()
+
     const videoId = parseYouTubeVideoId(target)
     const yt = await Innertube.create()
     const info = await yt.getInfo(videoId)
@@ -60,6 +64,75 @@ export class YouTubeChatSource extends PlatformChatSource {
       this.emitDisconnected("YouTube live chat disconnected.")
     }
   }
+}
+
+function configureYouTubeJsRuntime() {
+  if (youtubeJsRuntimeConfigured) {
+    return
+  }
+
+  Log.setLevel(Log.Level.ERROR)
+
+  Parser.setParserErrorHandler((parserError) => {
+    if (parserError.error_type === "class_not_found" || parserError.error_type === "typecheck") {
+      return
+    }
+
+    if (parserError.error_type === "parse" && parserError.error instanceof Error) {
+      console.warn("[YOUTUBEJS][Parser]:", parserError.error)
+      return
+    }
+
+    console.warn("[YOUTUBEJS][Parser]:", `${parserError.classname} ${parserError.error_type}`)
+  })
+
+  suppressTimeoutNaNWarning()
+  youtubeJsRuntimeConfigured = true
+}
+
+function suppressTimeoutNaNWarning() {
+  const originalEmitWarning = process.emitWarning.bind(process)
+
+  process.emitWarning = ((warning: unknown, ...rest: unknown[]) => {
+    const type = readWarningType(rest)
+    const message = readWarningMessage(warning)
+
+    if (type === "TimeoutNaNWarning" && message.includes("NaN is not a number")) {
+      return
+    }
+
+    originalEmitWarning(warning as Parameters<typeof process.emitWarning>[0], ...(rest as []))
+  }) as typeof process.emitWarning
+}
+
+function readWarningType(rest: unknown[]) {
+  const [first, second] = rest
+
+  if (typeof first === "string") {
+    return first
+  }
+
+  if (isRecord(first) && typeof first.type === "string") {
+    return first.type
+  }
+
+  if (typeof second === "string") {
+    return second
+  }
+
+  return null
+}
+
+function readWarningMessage(warning: unknown) {
+  if (typeof warning === "string") {
+    return warning
+  }
+
+  if (warning instanceof Error) {
+    return warning.message
+  }
+
+  return ""
 }
 
 function parseYouTubeVideoId(target: string) {

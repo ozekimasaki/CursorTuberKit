@@ -10,12 +10,11 @@ import type { PlatformChatState } from "../shared/platformChat.js"
 
 export function readAutomationPolicy(): AutomationPolicy {
   const maxExecutionLevel = parseExecutionLevel(process.env.AUTOMATION_MAX_EXECUTION_LEVEL)
+  const allowInAppAutoExecution = parseBooleanFlag(process.env.AUTOMATION_ALLOW_IN_APP_AUTO_EXECUTE)
 
   return {
     allowExternalExecution: false,
-    allowInAppAutoExecution:
-      readBooleanFlag(process.env.AUTOMATION_ALLOW_IN_APP_AUTO_EXECUTE) &&
-      maxExecutionLevel === "auto_executable",
+    allowInAppAutoExecution: allowInAppAutoExecution ?? maxExecutionLevel === "auto_executable",
     maxExecutionLevel,
   }
 }
@@ -71,14 +70,24 @@ function parseExecutionLevel(value: string | undefined): AutomationPolicy["maxEx
     case "auto_executable":
       return normalized
     default:
-      return "approval_required"
+      return "auto_executable"
   }
 }
 
-function readBooleanFlag(value: string | undefined) {
+function parseBooleanFlag(value: string | undefined) {
   if (!value) {
+    return null
+  }
+
+  const normalized = value.trim().toLowerCase()
+
+  if (["1", "true", "yes", "on"].includes(normalized)) {
+    return true
+  }
+
+  if (["0", "false", "no", "off"].includes(normalized)) {
     return false
   }
 
-  return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase())
+  return null
 }

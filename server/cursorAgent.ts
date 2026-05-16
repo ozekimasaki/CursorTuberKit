@@ -1,4 +1,4 @@
-import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process"
+import { spawn, spawnSync } from "node:child_process"
 import { existsSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import type { ChatActionPayload, ChatSessionPayload } from "../shared/chatStream.js"
@@ -34,6 +34,7 @@ export function validateCursorConfiguration() {
 }
 
 export async function streamCursorResponse({
+  compactPrompt,
   compiledPrompt,
   onEmotion,
   onSupportingEvent,
@@ -59,11 +60,11 @@ export async function streamCursorResponse({
       return
     }
 
-    child.kill("SIGTERM")
+    child.kill()
 
     abortTimeout = setTimeout(() => {
       if (!child.killed) {
-        child.kill("SIGKILL")
+        child.kill()
       }
     }, 2000)
   }
@@ -71,6 +72,7 @@ export async function streamCursorResponse({
   signal.addEventListener("abort", handleAbort, { once: true })
   child.stdin.end(
     JSON.stringify({
+      compactPrompt: compactPrompt?.trim() || undefined,
       compiledPrompt,
       route,
       session,
@@ -145,7 +147,7 @@ export async function streamCursorResponse({
       })
 
       child.on("exit", (code, workerSignal) => {
-        if (signal.aborted || workerSignal === "SIGTERM" || workerSignal === "SIGKILL") {
+        if (signal.aborted || child.killed) {
           resolve()
           return
         }
