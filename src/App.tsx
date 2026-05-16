@@ -106,6 +106,12 @@ export type StreamRuntimeActivity = {
   tone: RuntimeTone
 }
 
+type StageBackgroundMedia = {
+  kind: "image" | "video"
+  name: string
+  url: string
+}
+
 type StreamRuntimeProgress = {
   activeDetail: string | null
   activeLabel: string | null
@@ -367,6 +373,7 @@ export function App() {
   const [platformState, setPlatformState] = useState<PlatformChatState>(createIdlePlatformChatState())
   const [liveViewerEvents, setLiveViewerEvents] = useState<PlatformViewerEvent[]>([])
   const [autoReplyEnabled, setAutoReplyEnabled] = useState(false)
+  const [stageBackgroundMedia, setStageBackgroundMedia] = useState<StageBackgroundMedia | null>(null)
   const [motionPngAssetStatus, setMotionPngAssetStatus] =
     useState<MotionPngAssetStatus>(defaultMotionPngAssetStatus)
   const [motionPngFiles, setMotionPngFiles] = useState<File[]>([])
@@ -393,6 +400,7 @@ export function App() {
   const autoContentSequenceRef = useRef(0)
   const autoContentSessionBaseRef = useRef<string | null>(null)
   const motionPngAvatarRef = useRef<MotionPngAvatarHandle | null>(null)
+  const stageBackgroundInputRef = useRef<HTMLInputElement | null>(null)
   const motionPngFolderInputRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
@@ -413,6 +421,16 @@ export function App() {
     input.setAttribute("webkitdirectory", "")
     input.setAttribute("directory", "")
   }, [])
+
+  useEffect(() => {
+    const url = stageBackgroundMedia?.url
+
+    return () => {
+      if (url) {
+        URL.revokeObjectURL(url)
+      }
+    }
+  }, [stageBackgroundMedia])
 
   useEffect(() => {
     const abortController = new AbortController()
@@ -472,6 +490,29 @@ export function App() {
 
   function handleMotionPngFolderSelect() {
     motionPngFolderInputRef.current?.click()
+  }
+
+  function handleStageBackgroundSelect() {
+    stageBackgroundInputRef.current?.click()
+  }
+
+  function handleStageBackgroundChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    event.target.value = ""
+
+    if (!file) {
+      return
+    }
+
+    setStageBackgroundMedia({
+      kind: file.type.startsWith("video/") ? "video" : "image",
+      name: file.name,
+      url: URL.createObjectURL(file),
+    })
+  }
+
+  function handleStageBackgroundClear() {
+    setStageBackgroundMedia(null)
   }
 
   function handleMotionPngFolderChange(event: ChangeEvent<HTMLInputElement>) {
@@ -2008,9 +2049,28 @@ export function App() {
   return (
     <>
       <section
-        className={`stage${dockOpen ? " stage--dock-open" : ""}`}
+        className={`stage${dockOpen ? " stage--dock-open" : ""}${stageBackgroundMedia ? " stage--custom-background" : ""}`}
         aria-label="配信用アバターステージ"
       >
+        {stageBackgroundMedia?.kind === "image" && (
+          <img
+            aria-hidden="true"
+            alt=""
+            className="stage__custom-background"
+            src={stageBackgroundMedia.url}
+          />
+        )}
+        {stageBackgroundMedia?.kind === "video" && (
+          <video
+            aria-hidden="true"
+            autoPlay
+            className="stage__custom-background stage__custom-background--video"
+            loop
+            muted
+            playsInline
+            src={stageBackgroundMedia.url}
+          />
+        )}
         <div className="stage__backdrop" aria-hidden="true" />
         <div className="stage__grid" aria-hidden="true" />
         <div className="stage__horizon" aria-hidden="true" />
@@ -2133,6 +2193,14 @@ export function App() {
       )}
 
       <input
+        ref={stageBackgroundInputRef}
+        accept="image/*,video/*"
+        hidden
+        onChange={handleStageBackgroundChange}
+        type="file"
+      />
+
+      <input
         ref={motionPngFolderInputRef}
         hidden
         multiple
@@ -2142,11 +2210,15 @@ export function App() {
 
       <ControlDock
         avatarMode={avatarMode}
+        backgroundAssetKind={stageBackgroundMedia?.kind ?? null}
+        backgroundAssetLabel={stageBackgroundMedia?.name ?? null}
         open={dockOpen}
         onClose={() => {
           setDockOpen(false)
         }}
         onAvatarModeChange={setAvatarMode}
+        onBackgroundClear={handleStageBackgroundClear}
+        onBackgroundSelect={handleStageBackgroundSelect}
         onMotionPngClear={handleMotionPngClear}
         onMotionPngFolderSelect={handleMotionPngFolderSelect}
         onMotionPngSettingChange={updateMotionPngSettings}

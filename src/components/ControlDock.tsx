@@ -16,7 +16,11 @@ import { ViewerEventFeed } from "./ViewerEventFeed"
 
 type ControlDockProps = {
   avatarMode: AvatarMode
+  backgroundAssetKind: "image" | "video" | null
+  backgroundAssetLabel: string | null
   onAvatarModeChange: (mode: AvatarMode) => void
+  onBackgroundClear: () => void
+  onBackgroundSelect: () => void
   contentSurface: CharacterContentSurface
   open: boolean
   onClose: () => void
@@ -59,7 +63,11 @@ type DockTab = "comments" | "content" | "compose" | "transcript" | "settings"
 
 export function ControlDock({
   avatarMode,
+  backgroundAssetKind,
+  backgroundAssetLabel,
   onAvatarModeChange,
+  onBackgroundClear,
+  onBackgroundSelect,
   contentSurface,
   open,
   onClose,
@@ -476,6 +484,35 @@ export function ControlDock({
                     </p>
                   </>
                 )}
+              </div>
+
+              <div className="card">
+                <p className="card__title">Background</p>
+                <div className="composer__actions background-actions">
+                  <button className="btn btn--primary" type="button" onClick={onBackgroundSelect}>
+                    背景を選択
+                  </button>
+                  <button className="btn" type="button" onClick={onBackgroundClear} disabled={!backgroundAssetLabel}>
+                    クリア
+                  </button>
+                </div>
+                <div className="card__row">
+                  <span className="card__key">状態</span>
+                  <span className={`card__val card__val--${backgroundAssetLabel ? "ok" : "warn"}`}>
+                    {backgroundAssetLabel ? "差し替え中" : "デフォルト"}
+                  </span>
+                </div>
+                <div className="card__row">
+                  <span className="card__key">選択中</span>
+                  <span className="card__val">
+                    {backgroundAssetLabel
+                      ? `${backgroundAssetKind === "video" ? "動画" : "画像"} · ${backgroundAssetLabel}`
+                      : "未選択"}
+                  </span>
+                </div>
+                <p className="card__hint">
+                  画像と動画のどちらでも stage 背景を差し替えられます。動画はミュート・ループ再生されます。
+                </p>
               </div>
 
               <div className="card">
