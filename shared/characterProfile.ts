@@ -4,7 +4,6 @@ export const characterProfile = {
   appName: "キャットリン配信アバター",
   serviceSlug: "catlin-streaming-avatar",
   agentName: "Catlin Streaming Avatar",
-  eyebrow: "Catlin AI",
   panelHeading: "AI配信キャラクター",
   promptLabel: "視聴者コメント",
   promptPlaceholder: "例: こんばんは、来ました。最初の挨拶を聞かせてほしいです",

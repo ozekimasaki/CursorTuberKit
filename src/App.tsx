@@ -2290,7 +2290,6 @@ export function App() {
         <div className="brand">
           <span className="brand__dot" aria-hidden="true" />
           <span className="brand__name">{currentCharacterName}</span>
-          <span className="brand__tag">{characterProfile.eyebrow}</span>
         </div>
         <div className="topbar__spacer" />
         <div className="topbar__status-strip">
