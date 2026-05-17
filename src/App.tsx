@@ -1,4 +1,5 @@
 import { type ChangeEvent, useEffect, useMemo, useRef, useState } from "react"
+import { AlertTriangle, X } from "lucide-react"
 import {
   type AutomationAction,
   type AutomationEnvelope,
@@ -18,10 +19,11 @@ import {
   type PlatformChatStateResponse,
   type PlatformViewerEvent,
 } from "../shared/platformChat"
-import { ControlDock } from "./components/ControlDock"
-import { MaidCatAvatar, type AvatarState } from "./components/MaidCatAvatar"
-import { MotionPngAvatar, type MotionPngAvatarHandle } from "./components/MotionPngAvatar"
-import { ViewerEventFeed } from "./components/ViewerEventFeed"
+import { OperatorConsole } from "./components/OperatorConsole"
+import { SettingsModal } from "./components/SettingsModal"
+import { StageView } from "./components/StageView"
+import { type AvatarState } from "./components/MaidCatAvatar"
+import { type MotionPngAvatarHandle } from "./components/MotionPngAvatar"
 import { playAudioBlob } from "./lib/audioPlayback"
 import {
   defaultMotionPngAssetStatus,
@@ -30,6 +32,7 @@ import {
   type MotionPngAssetStatus,
   type MotionPngAudioAnalysis,
   type MotionPngSettings,
+  type SvgAvatarSettings,
 } from "./lib/avatarConfig"
 import { deriveCharacterContentSurface } from "./lib/contentSurface"
 import { inferEmotionFromText } from "./lib/emotion"
@@ -55,6 +58,20 @@ import {
 import { fetchRuntimeStatus, isChatRunRecap, type ChatRunRecap } from "./lib/runtimeStatus"
 import type { Viseme } from "./lib/visemes"
 import { fetchVoicevoxHealth, synthesizeVoice, type VoicevoxHealth } from "./lib/voicevox"
+import { findBackgroundPreset } from "./lib/backgroundPresets"
+import {
+  defaultStageDisplayPreferences,
+  loadAvatarMode,
+  loadMotionPngSettings,
+  loadStageDisplayPreferences,
+  loadSvgAvatarSettings,
+  saveAvatarMode,
+  saveMotionPngSettings,
+  saveStageDisplayPreferences,
+  saveSvgAvatarSettings,
+  stagePreferenceStorageKeys,
+  type StageDisplayPreferences,
+} from "./lib/stagePreferences"
 import type { CharacterContentSuggestion, CharacterContentSurface } from "./lib/contentSurface"
 
 export type StreamStatus = "ready" | "thinking" | "synthesizing" | "playing" | "error"
@@ -118,11 +135,10 @@ export type StreamRuntimeActivity = {
   tone: RuntimeTone
 }
 
-type StageBackgroundMedia = {
-  kind: "image" | "video"
-  name: string
-  url: string
-}
+type StageBackgroundMedia =
+  | { kind: "image"; name: string; url: string }
+  | { kind: "video"; name: string; url: string }
+  | { kind: "preset"; id: string; name: string; css: string }
 
 type StreamRuntimeProgress = {
   activeDetail: string | null
@@ -359,7 +375,7 @@ function toneFromRuntimeStatus(status: string | null): RuntimeTone {
 }
 
 export function App() {
-  const [avatarMode, setAvatarMode] = useState<AvatarMode>("svg")
+  const [avatarMode, setAvatarMode] = useState<AvatarMode>(() => loadAvatarMode() ?? "svg")
   const [avatarState, setAvatarState] = useState<AvatarState>("idle")
   const [status, setStatus] = useState<StreamStatus>("ready")
   const [responseText, setResponseText] = useState("")
@@ -380,6 +396,8 @@ export function App() {
   const [latestAutomationEnvelope, setLatestAutomationEnvelope] = useState<AutomationEnvelope | null>(null)
   const [latestModeration, setLatestModeration] = useState<ModerationAssessment | null>(null)
   const [dockOpen, setDockOpen] = useState(true)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [stagePreviewOpen, setStagePreviewOpen] = useState(false)
   const [streamScreenMode, setStreamScreenMode] = useState(false)
   const [dismissedError, setDismissedError] = useState<string | null>(null)
   const [recentTurns, setRecentTurns] = useState<ConversationTurn[]>([])
@@ -399,7 +417,11 @@ export function App() {
     useState<MotionPngAssetStatus>(defaultMotionPngAssetStatus)
   const [motionPngFiles, setMotionPngFiles] = useState<File[]>([])
   const [motionPngFolderLabel, setMotionPngFolderLabel] = useState<string | null>(null)
-  const [motionPngSettings, setMotionPngSettings] = useState<MotionPngSettings>(defaultMotionPngSettings)
+  const [motionPngSettings, setMotionPngSettings] = useState<MotionPngSettings>(() => loadMotionPngSettings())
+  const [svgAvatarSettings, setSvgAvatarSettings] = useState<SvgAvatarSettings>(() => loadSvgAvatarSettings())
+  const [stageDisplayPrefs, setStageDisplayPrefs] = useState<StageDisplayPreferences>(() =>
+    loadStageDisplayPreferences(),
+  )
   const abortRef = useRef<AbortController | null>(null)
   const avatarModeRef = useRef<AvatarMode>(avatarMode)
   const autoReplyEnabledRef = useRef(autoReplyEnabled)
@@ -455,7 +477,10 @@ export function App() {
   }, [])
 
   useEffect(() => {
-    const url = stageBackgroundMedia?.url
+    const url =
+      stageBackgroundMedia && stageBackgroundMedia.kind !== "preset"
+        ? stageBackgroundMedia.url
+        : null
 
     return () => {
       if (url) {
@@ -575,6 +600,17 @@ export function App() {
     setStageBackgroundMedia(null)
   }
 
+  function handleStageBackgroundPresetSelect(presetId: string) {
+    const preset = findBackgroundPreset(presetId)
+    if (!preset) return
+    setStageBackgroundMedia({
+      kind: "preset",
+      id: preset.id,
+      name: preset.label,
+      css: preset.css,
+    })
+  }
+
   function handleMotionPngFolderChange(event: ChangeEvent<HTMLInputElement>) {
     const files = Array.from(event.target.files ?? [])
     event.target.value = ""
@@ -606,6 +642,48 @@ export function App() {
       ...patch,
     }))
   }
+
+  function updateSvgAvatarSettings(patch: Partial<SvgAvatarSettings>) {
+    setSvgAvatarSettings((current) => ({ ...current, ...patch }))
+  }
+
+  function updateStageDisplayPrefs(patch: Partial<StageDisplayPreferences>) {
+    setStageDisplayPrefs((current) => ({ ...current, ...patch }))
+  }
+
+  useEffect(() => {
+    saveAvatarMode(avatarMode)
+  }, [avatarMode])
+
+  useEffect(() => {
+    saveMotionPngSettings(motionPngSettings)
+  }, [motionPngSettings])
+
+  useEffect(() => {
+    saveSvgAvatarSettings(svgAvatarSettings)
+  }, [svgAvatarSettings])
+
+  useEffect(() => {
+    saveStageDisplayPreferences(stageDisplayPrefs)
+  }, [stageDisplayPrefs])
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    function onStorage(event: StorageEvent) {
+      if (event.key === stagePreferenceStorageKeys.stageDisplay) {
+        setStageDisplayPrefs(loadStageDisplayPreferences())
+      } else if (event.key === stagePreferenceStorageKeys.motionPngSettings) {
+        setMotionPngSettings(loadMotionPngSettings())
+      } else if (event.key === stagePreferenceStorageKeys.svgSettings) {
+        setSvgAvatarSettings(loadSvgAvatarSettings())
+      } else if (event.key === stagePreferenceStorageKeys.avatarMode) {
+        const mode = loadAvatarMode()
+        if (mode) setAvatarMode(mode)
+      }
+    }
+    window.addEventListener("storage", onStorage)
+    return () => window.removeEventListener("storage", onStorage)
+  }, [])
 
   useEffect(() => {
     autoReplyEnabledRef.current = autoReplyEnabled
@@ -1097,6 +1175,7 @@ export function App() {
         if (event.type === "emotion") {
           finalEmotion = event.payload.emotion
           setFinalEmotionPayload(event.payload)
+          void syncRuntimeStatus()
         }
 
         if (event.type === "meta") {
@@ -1260,13 +1339,12 @@ export function App() {
     try {
       const saved = await updateChatSettings({
         characterName: nextSettings.characterName,
+        characterFullPrompt: nextSettings.characterFullPrompt,
         characterPrompt: nextSettings.characterPrompt,
-        characterState: nextSettings.characterState,
         memory: nextSettings.memory,
       })
       setChatSettings(saved)
-      setRuntimeCharacterSins(saved.characterState.sins)
-      setChatSettingsNotice("キャラクター名・キャラクター設定・長期記憶設定を保存しました。")
+      setChatSettingsNotice("キャラクター名・人格 prompt・長期記憶設定を保存しました。")
       void syncRuntimeStatus()
     } catch (error) {
       if (!isAbortError(error)) {
@@ -2235,160 +2313,136 @@ export function App() {
     status,
   ])
 
+  const viewMode =
+    typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("view") : null
+
+  const renderStageView = (variant: "obs" | "preview") => (
+    <StageView
+      avatarMode={avatarMode}
+      avatarState={avatarState}
+      caption={responseText}
+      showCaption={stageDisplayPrefs.showCaption}
+      showComments={stageDisplayPrefs.showComments}
+      liveViewerEvents={liveViewerEvents}
+      emotion={emotion}
+      motionPngAvatarRef={variant === "obs" ? motionPngAvatarRef : undefined}
+      motionPngFiles={motionPngFiles}
+      motionPngSettings={motionPngSettings}
+      svgAvatarSettings={svgAvatarSettings}
+      onMotionPngAssetStatusChange={variant === "obs" ? setMotionPngAssetStatus : undefined}
+      stageBackgroundMedia={stageBackgroundMedia}
+      viseme={viseme}
+      embedded={variant === "preview"}
+    />
+  )
+
+  if (viewMode === "stage") {
+    return renderStageView("obs")
+  }
+
+  if (stagePreviewOpen) {
+    return (
+      <>
+        {renderStageView("obs")}
+        <button
+          type="button"
+          className="stage-preview-exit"
+          onClick={() => setStagePreviewOpen(false)}
+          aria-label="操作画面に戻る"
+        >
+          ← 操作画面に戻る
+        </button>
+      </>
+    )
+  }
+
   return (
     <>
-      <section
-        className={`stage${dockOpen ? " stage--dock-open" : ""}${stageBackgroundMedia ? " stage--custom-background" : ""}`}
-        aria-label="配信用アバターステージ"
-      >
-        {stageBackgroundMedia?.kind === "image" && (
-          <img
-            aria-hidden="true"
-            alt=""
-            className="stage__custom-background"
-            src={stageBackgroundMedia.url}
-          />
-        )}
-        {stageBackgroundMedia?.kind === "video" && (
-          <video
-            aria-hidden="true"
-            autoPlay
-            className="stage__custom-background stage__custom-background--video"
-            loop
-            muted
-            playsInline
-            src={stageBackgroundMedia.url}
-          />
-        )}
-        <div className="stage__backdrop" aria-hidden="true" />
-        <div className="stage__grid" aria-hidden="true" />
-        <div className="stage__horizon" aria-hidden="true" />
-        <div className="stage__aura" aria-hidden="true" />
-        <div className="stage__avatar-shell">
-          <div className="stage__avatar">
-            {avatarMode === "motionpng" ? (
-              <MotionPngAvatar
-                assetFiles={motionPngFiles}
-                onAssetStatusChange={handleMotionPngAssetStatusChange}
-                ref={motionPngAvatarRef}
-                settings={motionPngSettings}
-                state={avatarState}
-              />
-            ) : (
-              <MaidCatAvatar
-                emotion={emotion}
-                hideBackgroundDecor={Boolean(stageBackgroundMedia)}
-                state={avatarState}
-                viseme={viseme}
-              />
-            )}
-          </div>
-        </div>
-      </section>
+      <OperatorConsole
+        characterName={currentCharacterName}
+        runtimeLabel={runtimeDisplay.label}
+        runtimeTone={runtimeDisplay.tone}
+        runtimeDetail={runtimeDisplay.detail}
+        status={status}
+        platformState={platformState}
+        autoReplyEnabled={autoReplyEnabled}
+        autoReplyPendingCount={autoReplyPendingCount}
+        voiceEnabled={voiceEnabled}
+        onVoiceEnabledChange={setVoiceEnabled}
+        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenStagePreview={() => setStagePreviewOpen(true)}
+        avatarMode={avatarMode}
+        avatarState={avatarState}
+        emotion={emotion}
+        viseme={viseme}
+        motionPngFiles={motionPngFiles}
+        motionPngSettings={motionPngSettings}
+        motionPngAvatarRef={motionPngAvatarRef}
+        onMotionPngAssetStatusChange={setMotionPngAssetStatus}
+        responseText={responseText}
+        recentTurns={recentTurns}
+        contentSurface={contentSurface}
+        runtimeActivities={runtimeProgress.activities}
+        onUseContentSuggestion={handlePrompt}
+        liveViewerEvents={liveViewerEvents}
+        onAutoReplyEnabledChange={setAutoReplyEnabled}
+        onCancel={handleCancel}
+        latestAutomationPolicy={latestAutomationEnvelope?.policy ?? platformState.automationPolicy}
+        latestModeration={latestModeration}
+        platformMode={platformMode}
+        platformTarget={platformTarget}
+        onPlatformModeChange={setPlatformMode}
+        onPlatformTargetChange={setPlatformTarget}
+        onPlatformStart={handlePlatformStart}
+        onPlatformStop={handlePlatformStop}
+        onSubmit={handlePrompt}
+      />
 
-      <header className="topbar">
-        <div className="brand">
-          <span className="brand__dot" aria-hidden="true" />
-          <span className="brand__name">{currentCharacterName}</span>
-        </div>
-        <div className="topbar__spacer" />
-        <div className="topbar__status-strip">
-          <span className={`runtime-chip runtime-chip--${runtimeDisplay.tone}`}>{runtimeDisplay.label}</span>
-          <span className={`info-chip info-chip--${platformState.status === "connected" ? "ok" : platformState.status === "error" ? "err" : platformState.status === "connecting" ? "warn" : "muted"}`}>
-            {platformState.status === "connected"
-              ? `${platformState.mode ?? "chat"} 接続中`
-              : platformState.status === "connecting"
-                ? "チャット接続中"
-                : platformState.status === "error"
-                  ? "チャット接続エラー"
-                  : "チャット未接続"}
-          </span>
-          <span className={`info-chip info-chip--${autoReplyEnabled ? "ok" : "muted"}`}>
-            自動返答 {autoReplyEnabled ? "ON" : "OFF"}
-          </span>
-          <span className="info-chip info-chip--muted">処理待ち {autoReplyPendingCount}</span>
-          {latestViewerEventAgeLabel && <span className="info-chip info-chip--muted">最終 {latestViewerEventAgeLabel}</span>}
-        </div>
-        <div className="topbar__actions">
-          <button
-            className={`topbar__mode-btn${streamScreenMode ? " topbar__mode-btn--active" : ""}`}
-            type="button"
-            onClick={() => handleStreamScreenModeChange(!streamScreenMode)}
-          >
-            {streamScreenMode ? "配信用HUD中" : "配信用HUD"}
-          </button>
-          <button
-            className={`icon-btn${voiceEnabled ? " icon-btn--active" : ""}`}
-            type="button"
-            aria-label={voiceEnabled ? "音声をオフにする" : "音声をオンにする"}
-            title={voiceEnabled ? "音声: オン" : "音声: オフ"}
-            onClick={() => setVoiceEnabled(!voiceEnabled)}
-          >
-            {voiceEnabled ? "🔊" : "🔇"}
-          </button>
-        </div>
-      </header>
-
-      <section className="caption" aria-live="polite" aria-label="ライブキャプション">
-        <div className="caption__head">
-          <div className="caption__meta">
-            <p className="caption__label">
-              <span className="caption__live" aria-hidden="true" />
-              NOW SPEAKING
-            </p>
-            {runtimeDisplay.detail && <p className="caption__support">{runtimeDisplay.detail}</p>}
-          </div>
-        </div>
-        <p className={`caption__text${captionText ? "" : " caption__text--placeholder"}`}>
-          {captionText || characterProfile.idleCaption}
-        </p>
-      </section>
-
-      {streamScreenMode && (
-        <section className="viewer-overlay" aria-label="受信コメントオーバーレイ">
-          <div className="viewer-overlay__card">
-            <div className="viewer-overlay__head">
-              <div className="viewer-overlay__meta">
-                <p className="viewer-overlay__label">STREAM HUD</p>
-                <div className="viewer-overlay__badges">
-                  <span className={`runtime-chip runtime-chip--${runtimeDisplay.tone}`}>{runtimeDisplay.label}</span>
-                  <span className={`viewer-overlay__status viewer-overlay__status--${platformState.status}`}>
-                    {platformState.status === "connected"
-                      ? `${platformState.mode ?? "chat"} 接続中`
-                      : platformState.status === "connecting"
-                        ? "接続中..."
-                        : platformState.status === "error"
-                          ? "接続エラー"
-                          : "未接続"}
-                  </span>
-                  <span className="viewer-overlay__count">{liveViewerEvents.length}件</span>
-                  <span className={`info-chip info-chip--${autoReplyEnabled ? "ok" : "muted"}`}>
-                    自動返答 {autoReplyEnabled ? "ON" : "OFF"}
-                  </span>
-                  {visibleError && <span className="info-chip info-chip--err">要確認</span>}
-                </div>
-              </div>
-              <div className="viewer-overlay__actions">
-                {isBusy && (
-                  <button className="viewer-overlay__action viewer-overlay__action--danger" type="button" onClick={handleCancel}>
-                    中断
-                  </button>
-                )}
-                {!dockOpen && (
-                  <button className="viewer-overlay__action" type="button" onClick={() => setDockOpen(true)}>
-                    操作を開く
-                  </button>
-                )}
-              </div>
-            </div>
-            <ViewerEventFeed events={liveViewerEvents} />
-          </div>
-        </section>
-      )}
+      <SettingsModal
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        avatarMode={avatarMode}
+        onAvatarModeChange={setAvatarMode}
+        backgroundAssetKind={stageBackgroundMedia?.kind ?? null}
+        backgroundAssetLabel={stageBackgroundMedia?.name ?? null}
+        backgroundPresetId={stageBackgroundMedia?.kind === "preset" ? stageBackgroundMedia.id : null}
+        onBackgroundClear={handleStageBackgroundClear}
+        onBackgroundSelect={handleStageBackgroundSelect}
+        onBackgroundPresetSelect={handleStageBackgroundPresetSelect}
+        onMotionPngClear={handleMotionPngClear}
+        onMotionPngFolderSelect={handleMotionPngFolderSelect}
+        onMotionPngSettingChange={updateMotionPngSettings}
+        motionPngAssetStatus={motionPngAssetStatus}
+        motionPngFolderLabel={motionPngFolderLabel}
+        motionPngSettings={motionPngSettings}
+        svgAvatarSettings={svgAvatarSettings}
+        onSvgAvatarSettingChange={updateSvgAvatarSettings}
+        stagePreview={renderStageView("preview")}
+        stageDisplayPrefs={stageDisplayPrefs}
+        onStageDisplayPrefsChange={updateStageDisplayPrefs}
+        voiceEnabled={voiceEnabled}
+        onVoiceEnabledChange={setVoiceEnabled}
+        voicevoxHealth={voicevoxHealth}
+        latestAutomationPolicy={latestAutomationEnvelope?.policy ?? platformState.automationPolicy}
+        latestModeration={latestModeration}
+        chatSettings={chatSettings}
+        chatSettingsBusy={chatSettingsAction === "saving"}
+        chatSettingsNotice={chatSettingsNotice}
+        chatMemoryClearBusy={chatSettingsAction === "clearing"}
+        characterPresets={characterPresets}
+        characterPresetBusy={characterPresetBusy}
+        characterPresetNotice={characterPresetNotice}
+        runtimeCharacterSins={runtimeCharacterSins}
+        onCharacterPresetCreate={handleCharacterPresetCreate}
+        onCharacterPresetDelete={handleCharacterPresetDelete}
+        onCharacterPresetUpdate={handleCharacterPresetUpdate}
+        onChatMemoryClear={handleChatMemoryClear}
+        onChatSettingsSave={handleChatSettingsSave}
+      />
 
       {visibleError && (
         <div className="toast" role="alert">
-          <span className="toast__icon" aria-hidden="true">⚠️</span>
+          <AlertTriangle className="toast__icon" size={16} aria-hidden />
           <p className="toast__msg">{visibleError}</p>
           <button
             className="toast__close"
@@ -2396,23 +2450,9 @@ export function App() {
             aria-label="閉じる"
             onClick={() => setDismissedError(visibleError)}
           >
-            ×
+            <X size={16} aria-hidden />
           </button>
         </div>
-      )}
-
-      {!dockOpen && (
-        <button
-          className="fab"
-          type="button"
-          onClick={() => {
-            setDockOpen(true)
-          }}
-          aria-label="操作ドックを開く"
-        >
-          <span aria-hidden="true">💬</span>
-          <span>操作</span>
-        </button>
       )}
 
       <input
@@ -2429,68 +2469,6 @@ export function App() {
         multiple
         onChange={handleMotionPngFolderChange}
         type="file"
-      />
-
-      <ControlDock
-        avatarMode={avatarMode}
-        backgroundAssetKind={stageBackgroundMedia?.kind ?? null}
-        backgroundAssetLabel={stageBackgroundMedia?.name ?? null}
-        open={dockOpen}
-        onClose={() => {
-          setDockOpen(false)
-        }}
-        onAvatarModeChange={setAvatarMode}
-        onBackgroundClear={handleStageBackgroundClear}
-        onBackgroundSelect={handleStageBackgroundSelect}
-        onMotionPngClear={handleMotionPngClear}
-        onMotionPngFolderSelect={handleMotionPngFolderSelect}
-        onMotionPngSettingChange={updateMotionPngSettings}
-        onStreamScreenModeChange={handleStreamScreenModeChange}
-        onCancel={handleCancel}
-        onSubmit={handlePrompt}
-        responseText={responseText}
-        runtimeActivities={runtimeProgress.activities}
-        runtimeDetail={runtimeDisplay.detail}
-        runtimeLabel={runtimeDisplay.label}
-        runtimeTone={runtimeDisplay.tone}
-        status={status}
-        voiceEnabled={voiceEnabled}
-        voicevoxHealth={voicevoxHealth}
-        contentSurface={contentSurface}
-        platformMode={platformMode}
-        platformTarget={platformTarget}
-        platformState={platformState}
-        liveViewerEvents={liveViewerEvents}
-        latestModeration={latestModeration}
-        latestAutomationPolicy={latestAutomationEnvelope?.policy ?? platformState.automationPolicy}
-        autoReplyEnabled={autoReplyEnabled}
-        autoReplyPendingCount={autoReplyPendingCount}
-        chatMemoryClearBusy={chatSettingsAction === "clearing"}
-        characterPresetBusy={characterPresetBusy}
-        characterPresetNotice={characterPresetNotice}
-        characterPresets={characterPresets}
-        chatSettings={chatSettings}
-        chatSettingsBusy={chatSettingsAction === "saving"}
-        chatSettingsNotice={chatSettingsNotice}
-        runtimeCharacterSins={runtimeCharacterSins}
-        errorMessage={visibleError}
-        motionPngAssetStatus={motionPngAssetStatus}
-        motionPngFolderLabel={motionPngFolderLabel}
-        motionPngSettings={motionPngSettings}
-        recentTurns={recentTurns}
-        streamScreenMode={streamScreenMode}
-        onAutoReplyEnabledChange={setAutoReplyEnabled}
-        onPlatformModeChange={setPlatformMode}
-        onPlatformStart={handlePlatformStart}
-        onPlatformStop={handlePlatformStop}
-        onPlatformTargetChange={setPlatformTarget}
-        onCharacterPresetCreate={handleCharacterPresetCreate}
-        onCharacterPresetDelete={handleCharacterPresetDelete}
-        onCharacterPresetUpdate={handleCharacterPresetUpdate}
-        onChatMemoryClear={handleChatMemoryClear}
-        onChatSettingsSave={handleChatSettingsSave}
-        onUseContentSuggestion={handlePrompt}
-        onVoiceEnabledChange={setVoiceEnabled}
       />
     </>
   )

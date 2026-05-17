@@ -103,13 +103,17 @@ app.put("/api/chat-settings", async (request, response) => {
   const patch = parseChatSettingsPatch(request.body)
 
   if (!patch) {
-    response.status(400).json({ error: "characterName / characterPrompt / characterState / memory を正しく指定してください。" })
+    response.status(400).json({ error: "characterName / characterPrompt / characterFullPrompt / characterState / memory を正しく指定してください。" })
     return
   }
 
   try {
     const settings = await updateChatSettings(patch)
-    settings.characterState.sins = await resetCharacterRuntimeSinValues(settings.characterState.sins)
+
+    if (patch.characterState?.sins) {
+      settings.characterState.sins = await resetCharacterRuntimeSinValues(settings.characterState.sins)
+    }
+
     response.json(settings)
   } catch (error) {
     response.status(500).json({ error: getErrorMessage(error) })
@@ -348,6 +352,11 @@ app.post("/api/chat/stream", async (request: Request<Record<string, never>, unkn
   const session = resolveChatRequestSession(request, response)
   const characterContext = resolveCharacterRuntimeContext({
     browserSessionId: session.browserSessionId,
+    promptIdentity: {
+      characterFullPrompt: chatSettings.characterFullPrompt,
+      characterName: chatSettings.characterName,
+      characterPrompt: chatSettings.characterPrompt,
+    },
     sinOverrides: runtimeCharacterSins,
   })
   const route = {

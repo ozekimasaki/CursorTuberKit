@@ -404,7 +404,7 @@ function estimateSinProfile(text: string): SevenDeadlySinsProfile {
     gluttony: normalized.includes("もっと") || normalized.includes("たっぷり") ? 58 : 34,
     greed: normalized.includes("ずっと") || normalized.includes("何度でも") ? 54 : 30,
     lust: 36 + hearts * 10 + (teasing ? 14 : 0),
-    pride: normalized.includes("任せて") || normalized.includes("キャットリン") ? 52 : 34,
+    pride: normalized.includes("任せて") ? 52 : 34,
     sloth: 18 + ellipsis * 6,
     wrath: 16 + exclamations * 8 + (normalized.includes("だめ") ? 20 : 0),
   }

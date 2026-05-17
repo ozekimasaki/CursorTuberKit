@@ -1,0 +1,287 @@
+/* ============================================================
+   Avatar-driving CSS — preserved verbatim from old styles.css
+   Touch only the .motionpng-stage__placeholder visual (no gradients).
+   ============================================================ */
+
+.avatar { width: 100%; }
+.avatar svg { display: block; width: 100%; height: auto; overflow: visible; }
+
+.avatar--motionpng {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.motionpng-avatar__transform {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  transform-origin: center;
+}
+
+.motionpng-stage {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.motionpng-stage--ready {
+  background: transparent;
+}
+
+.motionpng-stage__source {
+  position: absolute;
+  inset: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.motionpng-stage__video,
+.motionpng-stage__mouth {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  image-rendering: auto;
+}
+
+.motionpng-stage__mouth {
+  pointer-events: none;
+}
+
+/* Editorial placeholder — flat surface, single border. No gradients. */
+.motionpng-stage__placeholder {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: var(--space-6);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  border: 1px dashed var(--border-strong);
+  color: var(--text-mute);
+  text-align: center;
+  line-height: 1.6;
+  font-size: 0.875rem;
+  letter-spacing: 0;
+}
+
+/* Avatar SVG group transforms */
+.avatar #head,
+.avatar #left-eye,
+.avatar #right-eye,
+.avatar #blush,
+.avatar #whiskers {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.avatar #left-gesture-arm,
+.avatar #left-paw,
+.avatar #right-serving-arm,
+.avatar #tray-grip-paw,
+.avatar #serving-tray,
+.avatar #tea-cup,
+.avatar #cupcake {
+  transform-box: fill-box;
+}
+.avatar #left-gesture-arm { transform-origin: 82% 10%; }
+.avatar #left-paw { transform-origin: center; }
+.avatar #right-serving-arm { transform-origin: 8% 14%; }
+.avatar #tray-grip-paw { transform-origin: 12% 45%; }
+.avatar #serving-tray,
+.avatar #tea-cup,
+.avatar #cupcake { transform-origin: center; }
+.avatar #eyebrows path,
+.avatar #left-eye ellipse,
+.avatar #left-eye path,
+.avatar #left-eye .avatar-eye-shine,
+.avatar #right-eye ellipse,
+.avatar #right-eye path,
+.avatar #right-eye .avatar-eye-shine,
+.avatar #blush ellipse,
+.avatar #whiskers path,
+.avatar #muzzle-smile {
+  transform-box: fill-box;
+  transform-origin: center;
+  transition:
+    transform 220ms ease,
+    opacity 220ms ease,
+    filter 220ms ease;
+}
+.avatar #mouth-shapes {
+  transform-box: view-box;
+  transform-origin: 450px 402px;
+  transition: transform 90ms ease-out, opacity 90ms ease-out;
+}
+.avatar #mouth-base,
+.avatar #muzzle-smile { transition: opacity 90ms ease-out, transform 220ms ease; }
+
+.avatar--clean-background #pet-interface,
+.avatar--clean-background #avatar-corner-lines,
+.avatar--clean-background #avatar-sparkles,
+.avatar--clean-background #avatar-floating-icons {
+  display: none;
+}
+
+.avatar--idle #head { animation: head-sway 5.8s ease-in-out infinite; }
+.avatar--idle #left-gesture-arm { animation: idle-paw-wave 5.6s ease-in-out infinite; }
+.avatar--idle #left-paw { animation: paw-bob 5.6s ease-in-out infinite; }
+.avatar--idle #right-serving-arm { animation: tray-arm-sway 6.4s ease-in-out infinite; }
+.avatar--idle #serving-tray,
+.avatar--idle #tea-cup,
+.avatar--idle #cupcake { animation: tray-counterbalance 6.4s ease-in-out infinite; }
+.avatar--idle #left-eye, .avatar--idle #right-eye,
+.avatar--thinking #left-eye, .avatar--thinking #right-eye {
+  animation: blink 5.2s infinite;
+}
+.avatar--thinking #head { animation: thinking-tilt 1.6s ease-in-out infinite alternate; }
+.avatar--thinking #eyebrows { animation: curious-brow 1.6s ease-in-out infinite alternate; }
+.avatar--thinking #left-gesture-arm { animation: thinking-paw-shift 1.8s ease-in-out infinite alternate; }
+.avatar--thinking #right-serving-arm { animation: tray-arm-sway 5.8s ease-in-out infinite; }
+.avatar--thinking #serving-tray,
+.avatar--thinking #tea-cup,
+.avatar--thinking #cupcake { animation: tray-counterbalance 5.8s ease-in-out infinite; }
+.avatar--speaking #head { animation: head-sway 4.2s ease-in-out infinite; }
+.avatar--speaking #left-gesture-arm { animation: speaking-paw-gesture 1.15s ease-in-out infinite; }
+.avatar--speaking #left-paw { animation: paw-emphasis 1.15s ease-in-out infinite; }
+.avatar--speaking #right-serving-arm { animation: tray-arm-sway 3.6s ease-in-out infinite; }
+.avatar--speaking #serving-tray,
+.avatar--speaking #tea-cup,
+.avatar--speaking #cupcake { animation: tray-counterbalance 3.6s ease-in-out infinite; }
+.avatar--speaking #blush, .avatar--speaking #whiskers { animation: tiny-bounce 520ms ease-in-out infinite; }
+.avatar--error #head { animation: error-wobble 300ms ease-in-out 2; }
+
+.avatar--viseme-a #viseme-closed,
+.avatar--viseme-i #viseme-closed,
+.avatar--viseme-u #viseme-closed,
+.avatar--viseme-e #viseme-closed,
+.avatar--viseme-o #viseme-closed { opacity: 0; }
+.avatar--viseme-a #viseme-a,
+.avatar--viseme-i #viseme-i,
+.avatar--viseme-u #viseme-u,
+.avatar--viseme-e #viseme-e,
+.avatar--viseme-o #viseme-o { opacity: 1; }
+.avatar--viseme-a #mouth-shapes { transform: scale(1.05, 1.1); }
+.avatar--viseme-i #mouth-shapes { transform: scale(1.08, 0.94); }
+.avatar--viseme-u #mouth-shapes { transform: scale(0.94, 1.02); }
+.avatar--viseme-e #mouth-shapes { transform: scale(1.04, 1.03); }
+.avatar--viseme-o #mouth-shapes { transform: scale(0.98, 1.08); }
+.avatar--viseme-a #mouth-base, .avatar--viseme-i #mouth-base,
+.avatar--viseme-u #mouth-base, .avatar--viseme-e #mouth-base,
+.avatar--viseme-o #mouth-base { opacity: 0.22; }
+.avatar--viseme-a #muzzle-smile, .avatar--viseme-i #muzzle-smile,
+.avatar--viseme-u #muzzle-smile, .avatar--viseme-e #muzzle-smile,
+.avatar--viseme-o #muzzle-smile { opacity: 0.12; }
+
+.avatar--emotion-joy #eyebrows path:first-child { transform: translate(-2px, -6px) rotate(-7deg); }
+.avatar--emotion-joy #eyebrows path:last-child { transform: translate(2px, -6px) rotate(7deg); }
+.avatar--emotion-joy #left-eye ellipse,
+.avatar--emotion-joy #right-eye ellipse { transform: scale(1.04, 1.08); filter: brightness(1.08); }
+.avatar--emotion-joy #blush ellipse { opacity: 0.72; transform: scale(1.08); }
+.avatar--emotion-joy #whiskers path { transform: translateY(-1px) scaleX(1.02); }
+.avatar--emotion-joy #muzzle-smile { opacity: 1; transform: translateY(-2px) scale(1.08, 1.02); }
+
+.avatar--emotion-anger #eyebrows path:first-child { transform: translate(8px, 2px) rotate(-16deg); }
+.avatar--emotion-anger #eyebrows path:last-child { transform: translate(-8px, 2px) rotate(16deg); }
+.avatar--emotion-anger #left-eye ellipse,
+.avatar--emotion-anger #right-eye ellipse { transform: translateY(6px) scale(1.02, 0.76); filter: saturate(0.88); }
+.avatar--emotion-anger #left-eye .avatar-eye-shine,
+.avatar--emotion-anger #right-eye .avatar-eye-shine { opacity: 0.42; }
+.avatar--emotion-anger #blush ellipse { opacity: 0.18; transform: scale(0.94); }
+.avatar--emotion-anger #whiskers path { transform: translateY(2px) scaleX(1.03); }
+.avatar--emotion-anger #muzzle-smile { opacity: 0.04; transform: scale(0.92, 0.84); }
+
+.avatar--emotion-sadness #eyebrows path:first-child { transform: translate(-4px, 6px) rotate(10deg); }
+.avatar--emotion-sadness #eyebrows path:last-child { transform: translate(4px, 6px) rotate(-10deg); }
+.avatar--emotion-sadness #left-eye ellipse,
+.avatar--emotion-sadness #right-eye ellipse { transform: translateY(4px) scale(1, 1.08); filter: brightness(0.96); }
+.avatar--emotion-sadness #left-eye .avatar-eye-shine,
+.avatar--emotion-sadness #right-eye .avatar-eye-shine { opacity: 0.58; }
+.avatar--emotion-sadness #blush ellipse { opacity: 0.24; transform: scale(0.96); }
+.avatar--emotion-sadness #whiskers path { transform: translateY(4px); }
+.avatar--emotion-sadness #muzzle-smile { opacity: 0.14; transform: translateY(3px) scale(0.92, 0.82); }
+
+.avatar--emotion-delight #eyebrows path:first-child { transform: translate(-1px, -8px) rotate(-11deg); }
+.avatar--emotion-delight #eyebrows path:last-child { transform: translate(1px, -8px) rotate(11deg); }
+.avatar--emotion-delight #left-eye ellipse,
+.avatar--emotion-delight #right-eye ellipse { transform: scale(1.08, 0.94); filter: brightness(1.12); }
+.avatar--emotion-delight #left-eye .avatar-eye-shine,
+.avatar--emotion-delight #right-eye .avatar-eye-shine { opacity: 1; }
+.avatar--emotion-delight #blush ellipse { opacity: 0.78; transform: scale(1.12); }
+.avatar--emotion-delight #whiskers path { transform: translateY(-3px) scaleX(1.04); }
+.avatar--emotion-delight #muzzle-smile { opacity: 1; transform: translateY(-3px) scale(1.12, 1.06); }
+
+/* ===== Avatar animations ===== */
+@keyframes head-sway {
+  0%, 100% { transform: rotate(-1.4deg) translateY(0); }
+  50% { transform: rotate(1.4deg) translateY(-4px); }
+}
+@keyframes idle-paw-wave {
+  0%, 100% { transform: rotate(-1deg) translate(0, 0); }
+  22% { transform: rotate(-4deg) translate(-6px, -1px); }
+  50% { transform: rotate(4deg) translate(4px, -9px); }
+  74% { transform: rotate(-2deg) translate(-2px, -4px); }
+}
+@keyframes blink {
+  0%, 90%, 100% { transform: scaleY(1); }
+  93%, 96% { transform: scaleY(0.08); }
+}
+@keyframes paw-bob {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  50% { transform: translate(4px, -5px) rotate(-7deg); }
+}
+@keyframes thinking-tilt {
+  from { transform: rotate(-2deg); }
+  to { transform: rotate(2deg) translateY(-3px); }
+}
+@keyframes thinking-paw-shift {
+  from { transform: rotate(-1deg) translate(0, 0); }
+  to { transform: rotate(3deg) translate(3px, -6px); }
+}
+@keyframes curious-brow {
+  from { transform: translateY(0); }
+  to { transform: translateY(-4px); }
+}
+@keyframes speaking-paw-gesture {
+  0%, 100% { transform: rotate(0deg) translate(0, 0); }
+  30% { transform: rotate(-8deg) translate(-10px, -11px); }
+  58% { transform: rotate(6deg) translate(7px, -6px); }
+  82% { transform: rotate(-5deg) translate(-2px, -10px); }
+}
+@keyframes paw-emphasis {
+  0%, 100% { transform: rotate(0deg) scale(1); }
+  35% { transform: rotate(-10deg) translate(5px, -2px) scale(1.02); }
+  70% { transform: rotate(6deg) translate(-2px, 2px) scale(0.99); }
+}
+@keyframes tiny-bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2px); }
+}
+@keyframes tray-arm-sway {
+  0%, 100% { transform: rotate(0deg) translateY(0); }
+  50% { transform: rotate(2.2deg) translateY(-4px); }
+}
+@keyframes tray-counterbalance {
+  0%, 100% { transform: rotate(0deg) translateY(0); }
+  50% { transform: rotate(-2.2deg) translateY(1px); }
+}
+@keyframes error-wobble {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-6px); }
+  75% { transform: translateX(6px); }
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.55; transform: scale(0.92); }
+}

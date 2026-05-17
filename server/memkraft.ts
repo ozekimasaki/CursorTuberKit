@@ -95,8 +95,8 @@ async function runMemKraftCommand<T>(command: string, payload: unknown): Promise
       cwd: process.cwd(),
       env: {
         ...process.env,
-        MEMKRAFT_AGENT_ID: process.env.MEMKRAFT_AGENT_ID?.trim() || "catlin",
-        MEMKRAFT_CHANNEL_ID: process.env.MEMKRAFT_CHANNEL_ID?.trim() || "catlin-global",
+        MEMKRAFT_AGENT_ID: process.env.MEMKRAFT_AGENT_ID?.trim() || "cursor-tuber-kit",
+        MEMKRAFT_CHANNEL_ID: process.env.MEMKRAFT_CHANNEL_ID?.trim() || "cursor-tuber-kit-global",
         MEMKRAFT_DIR: resolveMemKraftDir(),
       },
       stdio: ["pipe", "pipe", "pipe"],

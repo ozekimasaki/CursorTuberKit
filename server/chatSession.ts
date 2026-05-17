@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto"
 import type { Request, Response } from "express"
 
-const CHAT_SESSION_COOKIE_NAME = "catlin_chat_session"
+const CHAT_SESSION_COOKIE_NAME = "cursor_tuber_chat_session"
 const CHAT_SESSION_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 30
 
 export type ChatRequestSession = {

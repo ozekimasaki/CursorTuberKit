@@ -2,13 +2,14 @@ import { randomUUID } from "node:crypto"
 import { access, mkdir, readFile, rm, unlink, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { Agent, type Run, type SDKAgent } from "@cursor/sdk"
+import { characterSinNames, normalizeCharacterSinValues, type CharacterSinName } from "../shared/characterState.js"
 import type { CursorPromptMode } from "../shared/cursorPrompt.js"
 import type { ChatActionPayload, ChatMetadataPayload, ChatSessionPayload } from "../shared/chatStream.js"
 import type { CharacterArtifactsPayload } from "../shared/characterAgents.js"
 import { characterProfile } from "../shared/characterProfile.js"
 import { inferEmotionFromText, type FinalEmotionPayload } from "../shared/emotion.js"
 import { deriveCharacterArtifacts } from "./characterAgents.js"
-import { updateCharacterRuntimeSinValuesFromHook } from "./characterRuntimeState.js"
+import { readCharacterRuntimeSinValues, updateCharacterRuntimeSinValuesFromHook } from "./characterRuntimeState.js"
 import { collectCursorRun } from "./cursorSdkRun.js"
 import {
   readCursorChatSessionRecord,
@@ -48,6 +49,12 @@ type StopHookPayload = {
   receivedAt?: string
 }
 
+type HookEmotionDriftResult = {
+  applied: boolean
+  detail: string
+  telemetry: CursorRunTelemetryRecord | null
+}
+
 const HOOK_ERROR_LOG_PATH = path.join(process.cwd(), ".cursor", "hook-state", "stop-hook-error.json")
 const HOOK_MANIFEST_DIR = path.join(process.cwd(), ".cursor", "hook-state", "active")
 const HOOK_RUNTIME_DIR = path.join(process.cwd(), ".cursor", "hook-state", "runs")
@@ -72,6 +79,7 @@ const input = await readInput()
 const model = input.route.model
 const selectedModel = { id: model }
 const characterAgentModel = input.route.characterAgentModel ?? model
+const emotionModel = input.route.emotionModel ?? model
 const hookStateDir = resolveHookStateDir(input.session.browserSessionId)
 
 let agent: SDKAgent | null = null
@@ -276,16 +284,25 @@ try {
       characterArtifactsResult.payload,
       Boolean(stopHookPayload),
     )
-    const runtimeSinsUpdated = await applyHookDrivenCharacterDrift(characterArtifactsResult.payload, stopHookPayload)
+    const hookEmotionDrift = await applyHookDrivenCharacterDrift({
+      apiKey,
+      artifacts: characterArtifactsResult.payload,
+      assistantText: normalizedResponse,
+      browserSessionId: input.session.browserSessionId,
+      currentSins: await readCharacterRuntimeSinValues(),
+      emotionModel,
+      providerSessionId: agent.agentId,
+      requestRunId: run.id,
+      stopHookPayload,
+    })
+    if (hookEmotionDrift.telemetry) {
+      await appendRunTelemetry(hookEmotionDrift.telemetry)
+    }
     writeAction({
       detail:
         finalEmotion.source === "cursor-subagent"
-          ? finalEmotion.hookObserved
-            ? runtimeSinsUpdated
-              ? "Character Director の感情分析を stop hook 観測つきで確定し、次回向けの感情パラメータも自動更新しました。"
-              : "Character Director の感情分析を stop hook 観測つきで確定しました。"
-            : "Character Director の感情分析を再利用して最終感情を確定しました。"
-          : "Character artifacts が使えないため本文から感情を推定しました。",
+          ? `${finalEmotion.hookObserved ? "Character Director の感情分析を stop hook 観測つきで確定しました。" : "Character Director の感情分析を再利用して最終感情を確定しました。"} ${hookEmotionDrift.detail}`
+          : `Character artifacts が使えないため本文から感情を推定しました。${hookEmotionDrift.detail}`,
       kind: "emotion-finalize",
       provider: "cursor",
       source: finalEmotion.source,
@@ -566,22 +583,189 @@ async function waitForStopHookPayload(stateDir: string) {
   return null
 }
 
-async function applyHookDrivenCharacterDrift(
-  artifacts: CharacterArtifactsPayload,
-  stopHookPayload: StopHookPayload | null,
-) {
-  if (stopHookPayload?.payload?.status !== "completed" || artifacts.source !== "cursor-subagents") {
-    return false
-  }
+async function applyHookDrivenCharacterDrift(options: {
+  apiKey: string
+  artifacts: CharacterArtifactsPayload
+  assistantText: string
+  browserSessionId: string
+  currentSins: Record<CharacterSinName, number>
+  emotionModel: string
+  providerSessionId: string
+  requestRunId: string
+  stopHookPayload: StopHookPayload | null
+}): Promise<HookEmotionDriftResult> {
+  const hookObserved = options.stopHookPayload?.payload?.status === "completed"
 
   try {
-    await updateCharacterRuntimeSinValuesFromHook(artifacts.director.sevenDeadlySins)
-    return true
+    const analysis = await analyzeHookEmotionDrift(options)
+    await updateCharacterRuntimeSinValuesFromHook(analysis.targetSins, options.currentSins)
+    return {
+      applied: true,
+      detail: `${hookObserved ? "Composer 2 で hook 後の感情増減を再評価し、hidden state を更新しました。" : "stop hook は観測できませんでしたが、Composer 2 で完了済み返答から hidden state を更新しました。"} ${analysis.summary}`,
+      telemetry: analysis.telemetry,
+    }
   } catch (error) {
+    const fallbackTargets =
+      options.artifacts.source === "cursor-subagents" ? options.artifacts.director.sevenDeadlySins : null
+
+    if (fallbackTargets) {
+      try {
+        await updateCharacterRuntimeSinValuesFromHook(fallbackTargets, options.currentSins)
+        return {
+          applied: true,
+          detail: `${hookObserved ? "" : "stop hook は観測できませんでしたが、"}Composer 2 の hook 感情分析は失敗したため、Character Director の seven deadly sins を代わりに反映しました。`,
+          telemetry: null,
+        }
+      } catch (fallbackError) {
+        const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : "Unknown fallback hook drift error."
+        console.warn(`Cursor hook-driven fallback drift update failed: ${fallbackMessage}`)
+      }
+    }
+
     const message = error instanceof Error ? error.message : "Unknown hook drift error."
     console.warn(`Cursor hook-driven character drift update failed: ${message}`)
-    return false
+    return {
+      applied: false,
+      detail: `hidden state の更新に失敗しました: ${message}`,
+      telemetry: null,
+    }
   }
+}
+
+async function analyzeHookEmotionDrift(options: {
+  apiKey: string
+  artifacts: CharacterArtifactsPayload
+  assistantText: string
+  browserSessionId: string
+  currentSins: Record<CharacterSinName, number>
+  emotionModel: string
+  providerSessionId: string
+  requestRunId: string
+}) {
+  const selectedModel = { id: options.emotionModel }
+  const analysisAgent = await Agent.create({
+    apiKey: options.apiKey,
+    local: { cwd: process.cwd() },
+    model: selectedModel,
+    name: `${characterProfile.agentName} Emotion Drift`,
+  })
+  const analysisStartedAt = new Date().toISOString()
+
+  try {
+    const analysisRun = await analysisAgent.send(buildHookEmotionPrompt(options), {
+      model: selectedModel,
+    })
+    const collectedRun = await collectCursorRun(analysisRun)
+    const analysisFinishedAt = new Date().toISOString()
+    const analysis = normalizeHookEmotionAnalysis(collectedRun.text, options.currentSins)
+
+    return {
+      summary: analysis.summary,
+      targetSins: analysis.targetSins,
+      telemetry: {
+        browserSessionId: options.browserSessionId,
+        durationMs: Math.max(0, Date.parse(analysisFinishedAt) - Date.parse(analysisStartedAt)),
+        error: null,
+        finishedAt: analysisFinishedAt,
+        model: options.emotionModel,
+        providerSessionId: options.providerSessionId,
+        requestRunId: options.requestRunId,
+        sdkRunId: analysisRun.id,
+        stage: "emotion-drift" as const,
+        startedAt: analysisStartedAt,
+        status: collectedRun.status,
+        statusHistory: collectedRun.statusHistory,
+        toolCalls: collectedRun.toolCalls,
+        usage: collectedRun.usage,
+      },
+    }
+  } finally {
+    if (typeof analysisAgent[Symbol.asyncDispose] === "function") {
+      await analysisAgent[Symbol.asyncDispose]()
+    } else {
+      analysisAgent.close()
+    }
+  }
+}
+
+function buildHookEmotionPrompt(options: {
+  artifacts: CharacterArtifactsPayload
+  assistantText: string
+  currentSins: Record<CharacterSinName, number>
+}) {
+  return [
+    "あなたは hidden emotional drift analyst です。",
+    "配信の1ターンが完了した直後に、内部キャラクター state の seven deadly sins をどう上下させるかだけを決めてください。",
+    "必ず JSON のみで返してください。",
+    `現在値は ${characterSinNames.join(", ")} の7軸で、それぞれ 0-100 の整数です。`,
+    "出力スキーマ:",
+    '{ "summary": "", "targetSins": { "pride": 50, "greed": 50, "envy": 50, "wrath": 50, "sloth": 50, "lust": 50, "gluttony": 50 }, "reasoning": [""] }',
+    "ルール:",
+    "- 現在値を起点に、今回の返答と演出意図を見て次の目標値を決める。",
+    "- 反応が弱い軸は据え置きでよい。毎回すべてを大きく動かさない。",
+    "- lust は性的意味ではなく charm / mischievous allure / indulgent pampering として扱う。",
+    "- wrath は境界線や鋭さの調整にだけ使い、攻撃性にはしない。",
+    "- summary は1文、reasoning は最大3件の短文。",
+    "",
+    "現在の hidden state:",
+    ...characterSinNames.map((name) => `- ${name}: ${options.currentSins[name]}`),
+    "",
+    "Character Director の補助データ:",
+    JSON.stringify({
+      deliveryStyle: options.artifacts.director.deliveryStyle,
+      focusEmotion: options.artifacts.director.focusEmotion,
+      sceneIntent: options.artifacts.director.sceneIntent,
+      sevenDeadlySins: options.artifacts.director.sevenDeadlySins,
+      source: options.artifacts.source,
+    }),
+    "",
+    "今回の返答本文:",
+    options.assistantText,
+  ].join("\n")
+}
+
+function normalizeHookEmotionAnalysis(
+  rawResponse: string,
+  currentSins: Record<CharacterSinName, number>,
+): {
+  summary: string
+  targetSins: Record<CharacterSinName, number>
+} {
+  const parsed = readRecord(JSON.parse(extractJsonObject(rawResponse)))
+  const rawTargets = readRecord(parsed?.targetSins)
+  const targetSins = normalizeCharacterSinValues({
+    envy: readNumericOrFallback(rawTargets?.envy, currentSins.envy),
+    gluttony: readNumericOrFallback(rawTargets?.gluttony, currentSins.gluttony),
+    greed: readNumericOrFallback(rawTargets?.greed, currentSins.greed),
+    lust: readNumericOrFallback(rawTargets?.lust, currentSins.lust),
+    pride: readNumericOrFallback(rawTargets?.pride, currentSins.pride),
+    sloth: readNumericOrFallback(rawTargets?.sloth, currentSins.sloth),
+    wrath: readNumericOrFallback(rawTargets?.wrath, currentSins.wrath),
+  })
+
+  return {
+    summary: typeof parsed?.summary === "string" && parsed.summary.trim() ? parsed.summary.trim() : "感情の上下を再評価しました。",
+    targetSins,
+  }
+}
+
+function extractJsonObject(rawResponse: string) {
+  const firstBraceIndex = rawResponse.indexOf("{")
+  const lastBraceIndex = rawResponse.lastIndexOf("}")
+
+  if (firstBraceIndex < 0 || lastBraceIndex < 0 || lastBraceIndex <= firstBraceIndex) {
+    throw new Error("Expected a JSON object in Cursor emotion drift analysis output.")
+  }
+
+  return rawResponse.slice(firstBraceIndex, lastBraceIndex + 1)
+}
+
+function readNumericOrFallback(value: unknown, fallback: number) {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback
+}
+
+function readRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null ? value as Record<string, unknown> : null
 }
 
 async function writeHookManifest(runId: string, stateDir: string) {

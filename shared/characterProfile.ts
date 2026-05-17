@@ -1,20 +1,19 @@
 export const characterProfile = {
   name: "キャットリン",
-  englishName: "Catlin",
-  appName: "キャットリン配信アバター",
-  serviceSlug: "catlin-streaming-avatar",
-  agentName: "Catlin Streaming Avatar",
-  panelHeading: "AI配信キャラクター",
+  appName: "CursorTuberKit",
+  serviceSlug: "cursor-tuber-kit",
+  agentName: "CursorTuberKit",
+  panelHeading: "配信アバター",
   promptLabel: "視聴者コメント",
   promptPlaceholder: "例: こんばんは、来ました。最初の挨拶を聞かせてほしいです",
   idleCaption: "視聴者コメントをどうぞ。",
-  transcriptHeading: "キャットリンの返答",
-  transcriptPlaceholder: "ここにキャットリンの返答がストリーミング表示されます。",
-  profileHeading: "キャラクター設定",
+  transcriptHeading: "AIの返答",
+  transcriptPlaceholder: "ここに現在の返答がストリーミング表示されます。",
+  profileHeading: "サンプルプロフィール",
   profileSummary:
     "月灯りのティーサロンから来たメイド猫。みずから配信を行うAIキャラクターとして、視聴者に語りかけ、コメントにも反応しながら場をやさしく華やかにしていきます。",
   role: "月灯りのティーサロンから来た、みずから配信を行うメイド猫のAIキャラクター",
-  tagline: "気配り上手で、少し小悪魔。けれど最後はきちんと甘やかしてくれる。",
+  tagline: "サンプル人格を土台に、名前・人格・自動応答を差し替えられます。",
 } as const
 
 export const characterProfileHighlights = [

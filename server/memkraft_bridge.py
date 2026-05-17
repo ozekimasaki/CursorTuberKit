@@ -10,6 +10,10 @@ from memkraft import MemKraft
 
 
 CURRENT_MEMORY_SCHEMA_VERSION = 2
+DEFAULT_AGENT_ID = "cursor-tuber-kit"
+DEFAULT_CHANNEL_ID = "cursor-tuber-kit-global"
+DEFAULT_MEMORY_ENTITY = "配信アバター"
+DEFAULT_MEMORY_TASK = "cursor-tuber-kit-memory"
 LEGACY_ASSISTANT_IDENTITY = "キャットリンは月灯りのティーサロンから来たメイド猫の配信アシスタント"
 LEGACY_CONTEXT_MARKERS = (
     "めいさん",
@@ -33,13 +37,13 @@ DEFAULT_CHANNEL_MEMORY = {
 
 DEFAULT_AGENT_MEMORY = {
     "memory_schema_version": CURRENT_MEMORY_SCHEMA_VERSION,
-    "continuity_goal": "過去のやり取りを踏まえてキャットリンの発話を自然につなげる",
+    "continuity_goal": "過去のやり取りを踏まえて現在の配信アバターの発話を自然につなげる",
     "continuity_rules": [
         "呼称や距離感を急にリセットしない",
         "直近の話題や雰囲気を優先して拾う",
         "古い記憶より今回の依頼と近い文脈を優先する",
     ],
-    "identity": "キャットリンは月灯りのティーサロンから来た、みずから配信を行うメイド猫のAIキャラクター",
+    "identity": "このアプリで設定されている配信アバターとして、一貫した口調と文脈を保つAIキャラクター",
 }
 
 
@@ -51,8 +55,8 @@ def main() -> int:
     command = sys.argv[1]
     payload = read_payload()
     memory_dir = os.environ.get("MEMKRAFT_DIR", os.path.join(os.getcwd(), "memory"))
-    channel_id = os.environ.get("MEMKRAFT_CHANNEL_ID", "catlin-global")
-    agent_id = os.environ.get("MEMKRAFT_AGENT_ID", "catlin")
+    channel_id = os.environ.get("MEMKRAFT_CHANNEL_ID", DEFAULT_CHANNEL_ID)
+    agent_id = os.environ.get("MEMKRAFT_AGENT_ID", DEFAULT_AGENT_ID)
 
     mk = MemKraft(memory_dir)
     bootstrap(mk, agent_id=agent_id, channel_id=channel_id)
@@ -119,10 +123,10 @@ def main() -> int:
             },
         )
         mk.log_event(
-            event=f"Stored Catlin exchange: {clip(user_prompt, 60)}",
-            tags="catlin,continuity,chat",
-            entity="キャットリン",
-            task="catlin-global-memory",
+            event=f"Stored avatar exchange: {clip(user_prompt, 60)}",
+            tags="avatar,continuity,chat",
+            entity=DEFAULT_MEMORY_ENTITY,
+            task=DEFAULT_MEMORY_TASK,
         )
         return write_json({"ok": True, "recent_exchanges": recent_exchanges})
 
@@ -130,10 +134,10 @@ def main() -> int:
         mk.agent_save(agent_id, dict(DEFAULT_AGENT_MEMORY))
         mk.channel_save(channel_id, dict(DEFAULT_CHANNEL_MEMORY))
         mk.log_event(
-            event="Cleared Catlin continuity memory",
-            tags="catlin,continuity,reset",
-            entity="キャットリン",
-            task="catlin-global-memory",
+            event="Cleared avatar continuity memory",
+            tags="avatar,continuity,reset",
+            entity=DEFAULT_MEMORY_ENTITY,
+            task=DEFAULT_MEMORY_TASK,
         )
         return write_json({"ok": True})
 
@@ -300,7 +304,7 @@ def build_running_summary(exchanges: list[dict[str, str]]) -> str:
     lines = ["最近の流れ:"]
     for exchange in exchanges[-4:]:
         lines.append(
-            f"- 視聴者: {clip(exchange['user'], 50)} / キャットリン: {clip(exchange['assistant'], 72)}"
+            f"- 視聴者: {clip(exchange['user'], 50)} / アバター: {clip(exchange['assistant'], 72)}"
         )
     return "\n".join(lines)
 

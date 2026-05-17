@@ -7,7 +7,7 @@ export type CursorTokenUsage = {
   outputTokens: number
 }
 
-export type CursorRunStage = "character-artifacts" | "main-reply"
+export type CursorRunStage = "character-artifacts" | "emotion-drift" | "main-reply"
 
 export type CursorToolCallTelemetry = {
   name: string

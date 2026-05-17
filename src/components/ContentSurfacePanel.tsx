@@ -1,3 +1,4 @@
+import { ArrowRight } from "lucide-react"
 import type { CharacterContentSurface } from "../lib/contentSurface"
 
 type ContentSurfacePanelProps = {
@@ -14,28 +15,30 @@ export function ContentSurfacePanel({
   variant = "dock",
 }: ContentSurfacePanelProps) {
   return (
-    <section className={`content-surface content-surface--${variant}`} aria-label="キャラクターコンテンツ">
-      <div className="content-surface__head">
-        <div>
-          <p className="content-surface__eyebrow">CHARACTER CONTENT</p>
-          <h3 className="content-surface__title">自動進行の返答面</h3>
-        </div>
-        <span className={`runtime-chip runtime-chip--${surface.tone.tone}`}>{surface.tone.label}</span>
-      </div>
+    <section
+      className={`content-surface content-surface--${variant}`}
+      aria-label="キャラクターコンテンツ"
+    >
+      <header className="content-surface__head">
+        <h3 className="content-surface__title">自動進行の返答面</h3>
+        <span className="content-surface__provider">{surface.tone.label}</span>
+      </header>
 
-      <p className="content-surface__provider">{surface.providerSummary}</p>
-      <p className="content-surface__provider">
+      <p className="content-surface__meta">{surface.providerSummary}</p>
+      <p className="content-surface__meta">
         自動返答 ON 中は、コメントの合間にここから自動でネタ面を差し込みます。
         {variant === "dock" && onUseSuggestion ? " 手動ボタンは確認用のフォールバックです。" : ""}
       </p>
 
-      <div className="content-surface__meta">
-        {surface.capabilityBadges.map((badge) => (
-          <span key={badge} className="info-chip info-chip--muted">
-            {badge}
-          </span>
-        ))}
-      </div>
+      {surface.capabilityBadges.length > 0 && (
+        <div className="content-surface__badges">
+          {surface.capabilityBadges.map((badge) => (
+            <span key={badge} className="content-surface__badge">
+              {badge}
+            </span>
+          ))}
+        </div>
+      )}
 
       <dl className="content-surface__insights">
         <div className="content-surface__insight">
@@ -52,27 +55,27 @@ export function ContentSurfacePanel({
         </div>
       </dl>
 
-      <div className="content-surface__grid">
+      <ul className="content-surface__grid">
         {surface.suggestions.map((suggestion) => (
-          <article key={suggestion.id} className="content-surface__item">
+          <li key={suggestion.id} className="content-surface__item">
             <div className="content-surface__item-head">
-              <p className="content-surface__item-title">{suggestion.title}</p>
-              <span className={`runtime-chip runtime-chip--${suggestion.tone}`}>{suggestion.id}</span>
+              <h4 className="content-surface__item-title">{suggestion.title}</h4>
+              {variant === "dock" && onUseSuggestion ? (
+                <button
+                  className="btn btn--ghost btn--sm content-surface__item-action"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => onUseSuggestion(suggestion.prompt)}
+                >
+                  <span>{busy ? "応答中…" : "手動で使う"}</span>
+                  <ArrowRight size={14} aria-hidden="true" />
+                </button>
+              ) : null}
             </div>
             <p className="content-surface__item-summary">{suggestion.summary}</p>
-            {variant === "dock" && onUseSuggestion ? (
-              <button
-                className="btn btn--secondary content-surface__item-action"
-                type="button"
-                disabled={busy}
-                onClick={() => onUseSuggestion(suggestion.prompt)}
-              >
-                {busy ? "応答中…" : "手動で使う"}
-              </button>
-            ) : null}
-          </article>
+          </li>
         ))}
-      </div>
+      </ul>
     </section>
   )
 }

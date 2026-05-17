@@ -1,3 +1,4 @@
+import { AlertTriangle } from "lucide-react"
 import type { PlatformViewerEvent } from "../../shared/platformChat"
 
 type ViewerEventFeedProps = {
@@ -10,37 +11,46 @@ export function ViewerEventFeed({
   events,
 }: ViewerEventFeedProps) {
   if (events.length === 0) {
-    return <p className="event-feed__empty">{emptyMessage}</p>
+    return (
+      <ol className="event-feed">
+        <li className="event-feed__empty">{emptyMessage}</li>
+      </ol>
+    )
   }
 
   return (
-    <div className="event-feed">
-      {events.map((event) => (
-        <article
-          key={event.id}
-          className={`event-item${event.isMonetized ? " event-item--monetized" : ""}`}
-        >
-          <div className="event-item__head">
-            <div className="event-item__author-block">
-              <strong className="event-item__author">{event.authorName}</strong>
-              <span className="event-item__time">{formatRelativeTimestamp(event.receivedAt)}</span>
+    <ol className="event-feed">
+      {events.map((event) => {
+        const moderationKind = event.moderation.disposition
+        const showModeration = moderationKind !== "allow"
+        return (
+          <li
+            key={event.id}
+            className={`event-item${event.isMonetized ? " event-item--monetized" : ""}`}
+          >
+            <div className="event-item__head">
+              <div className="event-item__author-block">
+                <span className="event-item__author">{event.authorName}</span>
+                <span className="event-item__time">{formatRelativeTimestamp(event.receivedAt)}</span>
+              </div>
+              {event.monetization?.amountText && (
+                <span className="event-item__money">{event.monetization.amountText}</span>
+              )}
             </div>
-            {event.monetization?.amountText && (
-              <span className="event-item__money">{event.monetization.amountText}</span>
+            <div className="event-item__meta">
+              <span className="event-item__badge">{eventLabel(event)}</span>
+            </div>
+            {showModeration && (
+              <div className={`event-item__moderation event-item__moderation--${moderationKind}`}>
+                <AlertTriangle size={12} aria-hidden="true" />
+                <span>{moderationKind === "block" ? "ブロック" : "要確認"}</span>
+              </div>
             )}
-          </div>
-          <div className="event-item__meta">
-            <span className="event-item__badge">{eventLabel(event)}</span>
-            {event.moderation.disposition !== "allow" && (
-              <span className={`event-item__moderation event-item__moderation--${event.moderation.disposition}`}>
-                {event.moderation.disposition === "block" ? "BLOCK" : "REVIEW"}
-              </span>
-            )}
-          </div>
-          <p className="event-item__text">{event.text}</p>
-        </article>
-      ))}
-    </div>
+            <p className="event-item__text">{event.text}</p>
+          </li>
+        )
+      })}
+    </ol>
   )
 }
 

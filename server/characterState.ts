@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto"
 import {
   buildCharacterHookModel,
   createCharacterStateMetadata,
@@ -7,6 +8,7 @@ import {
   type CharacterState,
   type CharacterStateMetadata,
 } from "../shared/characterState.js"
+import type { ChatSettings } from "../shared/chatSettings.js"
 
 export type CharacterRuntimeContext = {
   hooks: CharacterHookModel
@@ -21,11 +23,18 @@ export type CharacterRuntimeContext = {
 
 export function resolveCharacterRuntimeContext(options: {
   browserSessionId: string
+  promptIdentity?: Pick<ChatSettings, "characterFullPrompt" | "characterName" | "characterPrompt">
   sinOverrides?: Partial<Record<CharacterSinName, number>>
 }): CharacterRuntimeContext {
   const state = createDefaultCharacterState(options.sinOverrides)
   const hooks = buildCharacterHookModel(state)
-  const metadata = createCharacterStateMetadata(state)
+  const baseMetadata = createCharacterStateMetadata(state)
+  const metadata = options.promptIdentity
+    ? {
+        ...baseMetadata,
+        signature: `${baseMetadata.signature}:persona-${createPersonaSignature(options.promptIdentity)}`,
+      }
+    : baseMetadata
 
   return {
     hooks,
@@ -52,6 +61,19 @@ function buildCharacterPromptBlock(state: CharacterState, hooks: CharacterHookMo
     "hook 適用ルール（必ず内部処理に留めること）:",
     ...hookLines,
   ].join("\n")
+}
+
+function createPersonaSignature(promptIdentity: Pick<ChatSettings, "characterFullPrompt" | "characterName" | "characterPrompt">) {
+  return createHash("sha1")
+    .update(
+      JSON.stringify({
+        characterFullPrompt: promptIdentity.characterFullPrompt,
+        characterName: promptIdentity.characterName,
+        characterPrompt: promptIdentity.characterPrompt,
+      }),
+    )
+    .digest("hex")
+    .slice(0, 12)
 }
 
 function describeSin(name: CharacterSinName, value: number) {

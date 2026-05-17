@@ -32,6 +32,18 @@ export const defaultMotionPngAssetStatus: MotionPngAssetStatus = {
   tone: null,
 }
 
+export type SvgAvatarSettings = {
+  offsetX: number
+  offsetY: number
+  scale: number
+}
+
+export const defaultSvgAvatarSettings: SvgAvatarSettings = {
+  offsetX: 0,
+  offsetY: 0,
+  scale: 1,
+}
+
 export const defaultMotionPngSettings: MotionPngSettings = {
   chromaKeyColor: "#00ff00",
   chromaKeyEnabled: true,

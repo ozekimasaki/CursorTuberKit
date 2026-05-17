@@ -120,6 +120,7 @@ function copyCharacterPreset(preset: CharacterPreset): CharacterPreset {
   return {
     id: preset.id,
     label: preset.label,
+    characterFullPrompt: preset.characterFullPrompt,
     characterName: preset.characterName,
     characterPrompt: preset.characterPrompt,
     schemaVersion: preset.schemaVersion,

@@ -52,6 +52,7 @@ async function writeChatSettingsFile(settings: ChatSettings) {
 function copyChatSettings(settings: ChatSettings): ChatSettings {
   return {
     characterName: settings.characterName,
+    characterFullPrompt: settings.characterFullPrompt,
     characterPrompt: settings.characterPrompt,
     characterState: {
       sins: {

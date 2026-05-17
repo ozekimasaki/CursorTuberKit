@@ -2,7 +2,7 @@ import { spawn } from "node:child_process"
 
 const command = process.argv[2]
 const runtime = process.env.VOICEVOX_CONTAINER_RUNTIME ?? "podman"
-const containerName = process.env.VOICEVOX_CONTAINER_NAME ?? "maid-cat-voicevox"
+const containerName = process.env.VOICEVOX_CONTAINER_NAME ?? "cursor-tuber-kit-voicevox"
 const image = normalizeImageRef(process.env.VOICEVOX_IMAGE ?? "docker.io/voicevox/voicevox_engine:cpu-latest")
 const port = process.env.VOICEVOX_PORT ?? "50021"
 const voicevoxUrl = process.env.VOICEVOX_URL ?? `http://127.0.0.1:${port}`

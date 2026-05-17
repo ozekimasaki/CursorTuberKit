@@ -148,7 +148,7 @@ export const MotionPngAvatar = forwardRef<MotionPngAvatarHandle, MotionPngAvatar
   }, [assetFiles])
 
   const transformStyle: CSSProperties = {
-    transform: `translate(${settings.offsetX}px, ${settings.offsetY}px) scale(${settings.scale})`,
+    transform: `translate(calc(${settings.offsetX}px * var(--stage-avatar-scale, 1)), calc(${settings.offsetY}px * var(--stage-avatar-scale, 1))) scale(${settings.scale})`,
   }
 
   return (
