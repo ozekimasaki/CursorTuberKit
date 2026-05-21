@@ -27,6 +27,7 @@ import {
 import { useErrorToast } from "./hooks/useErrorToast"
 import { useChatSettingsManager } from "./hooks/useChatSettingsManager"
 import { usePersonaAutoRewrite } from "./hooks/usePersonaAutoRewrite"
+import { useStageBackgroundMedia, type StageBackgroundMedia } from "./hooks/useStageBackgroundMedia"
 import { useVoicevoxHealthProbe } from "./hooks/useVoicevoxHealthProbe"
 import { type AvatarState } from "./components/MaidCatAvatar"
 import { type MotionPngAvatarHandle } from "./components/MotionPngAvatar"
@@ -62,7 +63,6 @@ import {
 import { fetchRuntimeStatus, isChatRunRecap, type ChatRunRecap } from "./lib/runtimeStatus"
 import type { Viseme } from "./lib/visemes"
 import { synthesizeVoice } from "./lib/voicevox"
-import { findBackgroundPreset } from "./lib/backgroundPresets"
 import { requestAutopilotTopic } from "./lib/autopilot"
 import {
   AUTO_REPLY_BRIDGE_DELAY_MS,
@@ -136,10 +136,7 @@ const SettingsModal = lazy(() =>
 
 export type { RuntimeTone, StreamRuntimeActivity, StreamStatus } from "./lib/runtimeProgress"
 
-type StageBackgroundMedia =
-  | { kind: "image"; name: string; url: string }
-  | { kind: "video"; name: string; url: string }
-  | { kind: "preset"; id: string; name: string; css: string }
+
 
 export function App() {
   const [avatarMode, setAvatarMode] = useState<AvatarMode>(() => loadAvatarMode() ?? "svg")
@@ -171,7 +168,6 @@ export function App() {
   const [platformState, setPlatformState] = useState<PlatformChatState>(createIdlePlatformChatState())
   const [liveViewerEvents, setLiveViewerEvents] = useState<PlatformViewerEvent[]>([])
   const [autoReplyEnabled, setAutoReplyEnabled] = useState(false)
-  const [stageBackgroundMedia, setStageBackgroundMedia] = useState<StageBackgroundMedia | null>(null)
   const [motionPngAssetStatus, setMotionPngAssetStatus] =
     useState<MotionPngAssetStatus>(defaultMotionPngAssetStatus)
   const [motionPngFiles, setMotionPngFiles] = useState<File[]>([])
@@ -194,6 +190,14 @@ export function App() {
   const autoReplySeenScopeRef = useRef<string | null>(null)
   const bridgeSpeechCacheRef = useRef<Map<string, Blob>>(new Map())
   const { clearError, dismissError, showError, visibleError } = useErrorToast()
+  const {
+    handleStageBackgroundChange,
+    handleStageBackgroundClear,
+    handleStageBackgroundPresetSelect,
+    handleStageBackgroundSelect,
+    stageBackgroundInputRef,
+    stageBackgroundMedia,
+  } = useStageBackgroundMedia()
   const {
     characterPresetBusy,
     characterPresetNotice,
@@ -236,7 +240,6 @@ export function App() {
     syncAutopilotRecentTurns,
   } = useAutopilotScheduler()
   const motionPngAvatarRef = useRef<MotionPngAvatarHandle | null>(null)
-  const stageBackgroundInputRef = useRef<HTMLInputElement | null>(null)
   const motionPngFolderInputRef = useRef<HTMLInputElement | null>(null)
   const {
     handlePersonaAutoRewriteRequest,
@@ -270,19 +273,6 @@ export function App() {
     input.setAttribute("webkitdirectory", "")
     input.setAttribute("directory", "")
   }, [])
-
-  useEffect(() => {
-    const url =
-      stageBackgroundMedia && stageBackgroundMedia.kind !== "preset"
-        ? stageBackgroundMedia.url
-        : null
-
-    return () => {
-      if (url) {
-        URL.revokeObjectURL(url)
-      }
-    }
-  }, [stageBackgroundMedia])
 
   useEffect(() => {
     const abortController = new AbortController()
@@ -321,40 +311,6 @@ export function App() {
 
   function handleMotionPngFolderSelect() {
     motionPngFolderInputRef.current?.click()
-  }
-
-  function handleStageBackgroundSelect() {
-    stageBackgroundInputRef.current?.click()
-  }
-
-  function handleStageBackgroundChange(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0]
-    event.target.value = ""
-
-    if (!file) {
-      return
-    }
-
-    setStageBackgroundMedia({
-      kind: file.type.startsWith("video/") ? "video" : "image",
-      name: file.name,
-      url: URL.createObjectURL(file),
-    })
-  }
-
-  function handleStageBackgroundClear() {
-    setStageBackgroundMedia(null)
-  }
-
-  function handleStageBackgroundPresetSelect(presetId: string) {
-    const preset = findBackgroundPreset(presetId)
-    if (!preset) return
-    setStageBackgroundMedia({
-      kind: "preset",
-      id: preset.id,
-      name: preset.label,
-      css: preset.css,
-    })
   }
 
   function handleMotionPngFolderChange(event: ChangeEvent<HTMLInputElement>) {
