@@ -8,7 +8,7 @@ import type {
 } from "../../shared/platformChat"
 import type { AutomationPolicy } from "../../shared/automation"
 import type { ModerationAssessment } from "../../shared/moderation"
-import { type RuntimeTone, type StreamRuntimeActivity, type StreamStatus } from "../App"
+import { type RuntimeTone, type StreamRuntimeActivity, type StreamStatus } from "../lib/runtimeProgress"
 import type { AvatarMode, MotionPngAssetStatus, MotionPngSettings } from "../lib/avatarConfig"
 import type { CharacterContentSurface } from "../lib/contentSurface"
 import type { Emotion } from "../../shared/emotion"
