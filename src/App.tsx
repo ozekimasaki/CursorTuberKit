@@ -25,7 +25,9 @@ import {
   useAutopilotScheduler,
   useScheduleAutomaticContentSuggestion,
 } from "./hooks/useAutopilotScheduler"
+import { useErrorToast } from "./hooks/useErrorToast"
 import { usePersonaAutoRewrite } from "./hooks/usePersonaAutoRewrite"
+import { useVoicevoxHealthProbe } from "./hooks/useVoicevoxHealthProbe"
 import { type AvatarState } from "./components/MaidCatAvatar"
 import { type MotionPngAvatarHandle } from "./components/MotionPngAvatar"
 import { playAudioBlob } from "./lib/audioPlayback"
@@ -68,7 +70,7 @@ import {
 } from "./lib/preparedReplyQueue"
 import { fetchRuntimeStatus, isChatRunRecap, type ChatRunRecap } from "./lib/runtimeStatus"
 import type { Viseme } from "./lib/visemes"
-import { fetchVoicevoxHealth, synthesizeVoice, type VoicevoxHealth } from "./lib/voicevox"
+import { synthesizeVoice } from "./lib/voicevox"
 import { findBackgroundPreset } from "./lib/backgroundPresets"
 import { requestAutopilotTopic } from "./lib/autopilot"
 import {
@@ -154,11 +156,10 @@ export function App() {
   const [status, setStatus] = useState<StreamStatus>("ready")
   const [responseText, setResponseText] = useState("")
   const [captionText, setCaptionText] = useState("")
-  const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [emotion, setEmotion] = useState<Emotion>("neutral")
   const [viseme, setViseme] = useState<Viseme>("closed")
   const [voiceEnabled, setVoiceEnabled] = useState(true)
-  const [voicevoxHealth, setVoicevoxHealth] = useState<VoicevoxHealth | null>(null)
+  const voicevoxHealth = useVoicevoxHealthProbe()
   const [runtimeProgress, setRuntimeProgress] = useState<StreamRuntimeProgress>(createIdleRuntimeProgress)
   const [providerMetadata, setProviderMetadata] = useState<ChatMetadataPayload | null>(null)
   const [sessionMetadata, setSessionMetadata] = useState<ChatSessionPayload | null>(null)
@@ -173,7 +174,6 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [stagePreviewOpen, setStagePreviewOpen] = useState(false)
   const [streamScreenMode, setStreamScreenMode] = useState(false)
-  const [dismissedError, setDismissedError] = useState<string | null>(null)
   const [recentTurns, setRecentTurns] = useState<ConversationTurn[]>([])
   const [platformMode, setPlatformMode] = useState<PlatformChatMode>("youtube")
   const [platformTarget, setPlatformTarget] = useState("")
@@ -208,6 +208,7 @@ export function App() {
   const autoReplySeenEventIdsRef = useRef<Set<string>>(new Set())
   const autoReplySeenScopeRef = useRef<string | null>(null)
   const bridgeSpeechCacheRef = useRef<Map<string, Blob>>(new Map())
+  const { clearError, dismissError, showError, visibleError } = useErrorToast()
 
   async function syncRuntimeStatus(signal?: AbortSignal) {
     const snapshot = await fetchRuntimeStatus(signal)
@@ -283,23 +284,6 @@ export function App() {
       }
     }
   }, [stageBackgroundMedia])
-
-  useEffect(() => {
-    const abortController = new AbortController()
-
-    fetchVoicevoxHealth(abortController.signal)
-      .then((health) => setVoicevoxHealth(health))
-      .catch(() => {
-        setVoicevoxHealth({
-          ok: false,
-          speaker: 1,
-          url: "http://127.0.0.1:50021",
-          version: null,
-        })
-      })
-
-    return () => abortController.abort()
-  }, [])
 
   useEffect(() => {
     const abortController = new AbortController()
@@ -1286,16 +1270,6 @@ export function App() {
     )
   }
 
-  function showError(message: string) {
-    setDismissedError(null)
-    setErrorMessage(message)
-  }
-
-  function clearError() {
-    setErrorMessage(null)
-    setDismissedError(null)
-  }
-
   function applyPlatformChatStateResponse(payload: PlatformChatStateResponse) {
     setPlatformState(payload.state)
     setLiveViewerEvents(payload.recentEvents.slice(0, 12))
@@ -2092,7 +2066,6 @@ export function App() {
     }
   }
 
-  const visibleError = errorMessage && errorMessage !== dismissedError ? errorMessage : null
   const autoContentSessionBase = getAutoContentSessionBase(autoReplyEnabled, platformState)
   const contentSurface = useMemo(
     () =>
@@ -2294,7 +2267,7 @@ export function App() {
             className="toast__close"
             type="button"
             aria-label="閉じる"
-            onClick={() => setDismissedError(visibleError)}
+            onClick={dismissError}
           >
             <X size={16} aria-hidden />
           </button>
