@@ -45,10 +45,13 @@ export type StreamAiResponseOptions = {
 type BuildAvatarPromptOptions = {
   characterContext?: CharacterRuntimeContext
   chatSettings?: ChatSettings
+  inputKind?: AvatarPromptInputKind
   memoryContext?: MemKraftPromptContext
   recentTurns?: ConversationTurn[]
   replyStyle?: ChatAutomationReplyStyle
 }
+
+export type AvatarPromptInputKind = "viewer-comment" | "self-driven"
 
 export function buildAvatarPrompt(userPrompt: string, options: BuildAvatarPromptOptions = {}) {
   return buildAvatarPromptBundle(userPrompt, options).fullPrompt
@@ -121,18 +124,34 @@ function buildPromptSections(
 
   sections.push(
     "",
-    mode === "full-context" ? "今回の視聴者コメント:" : "新しく届いた視聴者コメント:",
+    mode === "full-context"
+      ? options.inputKind === "self-driven"
+        ? "今回の自走トピック (配信者本人として今広げる話題。視聴者コメントではない。台本の説明ではなく、配信でそのまま口にできる導入と短い投げかけにすること):"
+        : "今回の視聴者コメント:"
+      : options.inputKind === "self-driven"
+        ? "新しく自分が広げる話題 (口癖と語尾を保ったまま、直前と語り出しが被らないよう角度を変える):"
+        : "新しく届いた視聴者コメント:",
     userPrompt,
   )
 
+  if (recentTurns.length > 0) {
+    sections.push(
+      "",
+      "ループ回避: 直近の自分の発話と同じ話題語・同じ語り出し・同じ口癖をそのまま繰り返さないこと。続ける場合は角度を変える (味→淹れる人 / 物→記憶 / 説明→質問 など)。",
+    )
+  }
+
   if (options.replyStyle === "short") {
-    sections.push("", "いまはコメントが立て込んでいます。返答は1〜2文で短く、すぐ配信に返せる形にしてください。")
+    sections.push(
+      "",
+      "いまはコメントが立て込んでいます。返答は1〜2文で短く、すぐ配信に返せる形にしてください。短くても口癖と語尾は崩さず、必ず1つの動詞(動き・感情)を残すこと。謝罪や保留だけで閉じない。",
+    )
   }
 
   if (options.replyStyle === "compact") {
     sections.push(
       "",
-      "いまは複数コメント候補から返す内容を選んでいます。いちばん拾う価値の高いコメントを主軸にし、必要なら近い話題だけ少し混ぜて1〜2文で返してください。",
+      "いまは複数コメント候補から返す内容を選んでいます。いちばん拾う価値の高いコメントを主軸にし、必要なら近い話題だけ少し混ぜて1〜2文で返してください。短くても声(口癖・語尾・一人称)は維持し、視聴者へ向けた一言を必ず残すこと。",
     )
   }
 
@@ -170,27 +189,29 @@ function buildResumeLeadSections(chatSettings: ChatSettings) {
     "自己紹介や世界観の説明を繰り返さず、直前までの流れを踏まえて自然に続けてください。",
     "今回も維持したいキャラクター方針と話し方の優先ルール:",
     buildCompactCharacterPrompt(chatSettings.characterPrompt, renderedFullPrompt),
-    "characterPrompt に書かれた口調、ですます調/常体、語尾、一人称、呼び方、NG 表現は短い返答でも崩さないでください。",
-    "古い記憶よりも今回のコメントと直近の会話を優先してください。",
-    "今回のコメントに対して、そのまま配信で話せる短く自然な返答を返してください。",
+    "characterPrompt に書かれた口調、ですます調/常体、語尾、一人称、二人称、口癖、呼び方、NG 表現は短い返答でも崩さないでください。",
+    "1ターンは①掴み→②展開→③渡しの3段を意識し、説明だけや謝罪だけで閉じないこと。",
+    "直前ターンと同じ語り出し・同じ口癖・同じ話題語を繰り返さず、続ける場合は角度を変える。",
+    "古い記憶よりも今回の入力と直近の会話を優先してください。",
+    "今回の入力に対して、そのまま配信で話せる短く自然な返答を返してください。",
   ]
 }
 
 function buildCompactCharacterPrompt(characterPrompt: string, renderedFullPrompt: string) {
   const selected = dedupeLines([
     ...selectImportantLines(characterPrompt, {
-      keywords: ["ですます", "常体", "語尾", "一人称", "二人称", "口調", "話し方", "呼び方", "NG", "禁止"],
-      maxLines: 8,
-      prefixes: ["役割", "性格", "雰囲気", "話し方", "口調", "文体", "一人称", "二人称", "語尾", "返答方針", "制約", "AI自認", "NG", "禁止"],
+      keywords: ["ですます", "常体", "語尾", "一人称", "二人称", "口調", "話し方", "呼び方", "口癖", "掴み", "渡し", "謙遜", "謝罪", "ループ", "NG", "禁止", "絶対にしない"],
+      maxLines: 10,
+      prefixes: ["役割", "性格", "雰囲気", "声", "口癖", "話し方", "口調", "文体", "一人称", "二人称", "語尾", "配信者ジョブ", "サンプル発話", "返答方針", "制約", "AI自認", "NG", "禁止", "絶対にしない"],
     }),
     ...selectImportantLines(renderedFullPrompt, {
-      keywords: ["ですます", "常体", "語尾", "一人称", "二人称", "配信者本人", "別の名前", "台本", "字幕", "直前の流れ", "NG", "禁止"],
-      maxLines: 8,
-      prefixes: ["あなたの名前は", "入力は", "自分を指すときは", "あなたは配信者本人として", "視聴者コメントが", "返答は", "会話の連続性", "過去の記憶は"],
+      keywords: ["ですます", "常体", "語尾", "一人称", "二人称", "口癖", "配信者本人", "別の名前", "台本", "字幕", "直前", "ループ", "掴み", "渡し", "謙遜", "謝罪", "NG", "禁止"],
+      maxLines: 10,
+      prefixes: ["あなたの名前は", "入力は", "入力が", "自分を指すときは", "あなたは配信者本人として", "返答は", "会話の連続性", "過去の記憶は", "1ターン", "①掴み", "▼", "禁止"],
     }),
   ])
 
-  return truncatePromptText(selected.join("\n"), 1200)
+  return truncatePromptText(selected.join("\n"), 1400)
 }
 
 function selectImportantLines(
