@@ -33,9 +33,22 @@ type MotionPngTrackData = {
 
 type MouthState = "closed" | "half" | "open" | "e" | "u"
 
+// 標準モード（非HQ）の値: ノイズフロアと初期ピーク。RMS ベース、Japanese TTS で経験則として調整。
 const DEFAULT_NOISE_FLOOR = 0.002
 const DEFAULT_LEVEL_PEAK = 0.02
 const CHROMA_DISTANCE_MAX = Math.sqrt(255 ** 2 * 3)
+
+// 口形状の最小更新間隔。HQ: ~22fps（応答性優先）/ 標準: ~14fps（CPU 負荷を抑える）。
+const MOUTH_CHANGE_MIN_MS_HQ = 45
+const MOUTH_CHANGE_MIN_MS_STD = 70
+
+// 標準モード用 1 次 IIR ローパス係数。0.2 = 弱めの平滑化で口元の小刻みなジッタを軽減。
+const STD_AUDIO_SMOOTHING = 0.2
+
+// HQ モード用の DSP 係数。attack を速め release を遅めにし「素早く開いてゆっくり閉じる」自然な口元を作る。
+const HQ_RATIO_SMOOTHING = 0.25
+const HQ_ENVELOPE_ATTACK = 0.35
+const HQ_ENVELOPE_RELEASE = 0.6
 
 export class MotionPngEngine {
   private activeSprite: HTMLImageElement | null = null
@@ -272,7 +285,7 @@ export class MotionPngEngine {
 
   setHQAudioEnabled(enabled: boolean) {
     this.hqAudioEnabled = enabled
-    this.mouthChangeMinMs = enabled ? 45 : 70
+    this.mouthChangeMinMs = enabled ? MOUTH_CHANGE_MIN_MS_HQ : MOUTH_CHANGE_MIN_MS_STD
     this.resetAudioStats()
   }
 
@@ -292,11 +305,10 @@ export class MotionPngEngine {
       return
     }
 
-    const smoothing = 0.2
     const ratio = data.high / (data.low + data.high + 1e-6)
-    const nextVolume = this.volume * (1 - smoothing) + data.rms * smoothing
+    const nextVolume = this.volume * (1 - STD_AUDIO_SMOOTHING) + data.rms * STD_AUDIO_SMOOTHING
     this.volume = nextVolume
-    this.smoothedHighRatio = this.smoothedHighRatio * (1 - smoothing) + ratio * smoothing
+    this.smoothedHighRatio = this.smoothedHighRatio * (1 - STD_AUDIO_SMOOTHING) + ratio * STD_AUDIO_SMOOTHING
 
     const thresholds = this.getVolumeThresholds()
     this.callbacks.onVolumeChange?.(Math.min(1, nextVolume / (thresholds.half * 1.8)))
@@ -568,13 +580,10 @@ export class MotionPngEngine {
 
   private processAudioDataHQ(data: MotionPngAudioAnalysis) {
     const ratio = data.high / (data.low + data.high + 1e-6)
-    const ratioSmoothing = 0.25
-    this.smoothedHighRatio = this.smoothedHighRatio * (1 - ratioSmoothing) + ratio * ratioSmoothing
+    this.smoothedHighRatio = this.smoothedHighRatio * (1 - HQ_RATIO_SMOOTHING) + ratio * HQ_RATIO_SMOOTHING
 
     const sensitivity = this.sensitivity / 100
-    const attack = 0.35
-    const release = 0.6
-    const coefficient = data.rms > this.envelope ? attack : release
+    const coefficient = data.rms > this.envelope ? HQ_ENVELOPE_ATTACK : HQ_ENVELOPE_RELEASE
     this.envelope = this.envelope * (1 - coefficient) + data.rms * coefficient
 
     if (this.envelope < this.noiseFloor) {

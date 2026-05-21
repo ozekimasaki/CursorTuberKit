@@ -115,14 +115,23 @@ const stageStatusLabel: Record<StreamStatus, string> = {
   error: "エラー",
 }
 
+// 音声セグメント間の自然な間。短すぎると詰まり、長すぎると間延びする。
 const QUEUED_PLAYBACK_GAP_MS = 350
+// 視聴者コメントのキュー上限。これを超えると backlog spiral になりやすい。
 const MAX_QUEUED_VIEWER_EVENTS = 12
+// 自動返信の再試行回数（abort 以外の失敗時）。
 const MAX_AUTO_REPLY_RETRY_ATTEMPTS = 2
+// 返信生成の並列度。playback は直列だが、生成は先回りで並列化して "次ネタ待ち" を短縮する。
 const MAX_CONCURRENT_AUTO_REPLY_GENERATIONS = 2
+// コメントをまとめて返すトリガー件数。これに達したら compact 返信に切り替える。
 const COMPACT_REPLY_TRIGGER_COUNT = 6
+// 1 回の compact 返信で扱うコメント数の上限。これ以上は AI が破綻しやすい。
 const COMPACT_REPLY_BATCH_SIZE = 6
+// 「コメント順番に読んでいくね」を挟むまでの待ち時間。視聴者に preview を見せる余白。
 const AUTO_REPLY_BRIDGE_DELAY_MS = 1200
 const AUTO_REPLY_BRIDGE_TEXT = "コメント順番に読んでいくね。"
+// 直近何ターンを文脈として AI に渡すか。context 窓と質のバランスから 8 が経験則。
+const RECENT_TURNS_CONTEXT_SIZE = 8
 type ViewerEventTriageDecision = {
   action: "queue" | "skip"
   reason: string
@@ -2552,7 +2561,7 @@ export function App() {
 }
 
 function trimRecentTurns(turns: ConversationTurn[]) {
-  return turns.slice(-8)
+  return turns.slice(-RECENT_TURNS_CONTEXT_SIZE)
 }
 
 function deriveMotionPngFolderLabel(files: File[]) {
@@ -2566,6 +2575,17 @@ function deriveMotionPngFolderLabel(files: File[]) {
 
   return "MotionPNGTuber フォルダ"
 }
+
+// 音声合成セグメンテーションの閾値:
+// VOICEVOX は 50 文字前後で最も自然に発話できるため、句読点で適切に分割する。
+// MIN_LEN_FOR_PAUSE_SPLIT (26): これ未満は pause で分割せず溜める（細切れ防止）
+// MIN_PREFIX_BEFORE_PAUSE (14): 句読点前の最小プレフィックス（自然なフレーズ境界の保証）
+// MAX_LEN_BEFORE_FORCE_SPLIT (44): これを超えたら強制分割（合成待ちと記憶負荷の抑制）
+// FORCE_SPLIT_POSITION (24): 強制分割時の位置（残り 20 文字以上を確保）
+const MIN_LEN_FOR_PAUSE_SPLIT = 26
+const MIN_PREFIX_BEFORE_PAUSE = 14
+const MAX_LEN_BEFORE_FORCE_SPLIT = 44
+const FORCE_SPLIT_POSITION = 24
 
 function extractSpeechSegments(text: string, options?: { force?: boolean }) {
   const segments: string[] = []
@@ -2583,19 +2603,19 @@ function extractSpeechSegments(text: string, options?: { force?: boolean }) {
       continue
     }
 
-    if (remaining.length >= 26) {
+    if (remaining.length >= MIN_LEN_FOR_PAUSE_SPLIT) {
       let splitIndex = -1
       let match: RegExpExecArray | null = null
       const pauseRegex = new RegExp(pauseBoundary.source, "g")
 
       while ((match = pauseRegex.exec(remaining)) !== null) {
-        if (match.index + match[0].length >= 14) {
+        if (match.index + match[0].length >= MIN_PREFIX_BEFORE_PAUSE) {
           splitIndex = match.index + match[0].length
         }
       }
 
-      if (splitIndex === -1 && remaining.length >= 44) {
-        splitIndex = 24
+      if (splitIndex === -1 && remaining.length >= MAX_LEN_BEFORE_FORCE_SPLIT) {
+        splitIndex = FORCE_SPLIT_POSITION
       }
 
       if (splitIndex !== -1) {
@@ -2620,7 +2640,7 @@ function extractSpeechSegments(text: string, options?: { force?: boolean }) {
 }
 
 function insertViewerEvent(current: PlatformViewerEvent[], next: PlatformViewerEvent) {
-  return [next, ...current.filter((event) => event.id !== next.id)].slice(0, 12)
+  return [next, ...current.filter((event) => event.id !== next.id)].slice(0, MAX_QUEUED_VIEWER_EVENTS)
 }
 
 async function generatePromptResponse(
@@ -2917,16 +2937,22 @@ function selectAutomaticContentSuggestion(options: {
     return null
   }
 
+  const reason = (() => {
+    if (nextSuggestion.id === "recap") {
+      return "いまの流れを一度まとめて、次の雑談へつなぎます。"
+    }
+    if (nextSuggestion.id === "teaser") {
+      return "次に広げる話題を先回りで差し込み、配信の流れを保ちます。"
+    }
+    if (latestViewerEvent && options.platformState.status === "connected") {
+      return "コメントを拾い続けながら、流れを切らさないよう小ネタへ広げます。"
+    }
+    return "コメントが無くても止まらないよう、自走トークを次へ進めます。"
+  })()
+
   return {
     anchor: `${options.sessionKey}:sequence:${options.sequence}`,
-      reason:
-        nextSuggestion.id === "recap"
-          ? "いまの流れを一度まとめて、次の雑談へつなぎます。"
-          : nextSuggestion.id === "teaser"
-            ? "次に広げる話題を先回りで差し込み、配信の流れを保ちます。"
-            : latestViewerEvent && options.platformState.status === "connected"
-              ? "コメントを拾い続けながら、流れを切らさないよう小ネタへ広げます。"
-              : "コメントが無くても止まらないよう、自走トークを次へ進めます。",
+    reason,
     source: "autopilot",
     suggestion: nextSuggestion,
   }
@@ -3030,16 +3056,19 @@ function insertQueuedViewerEvent(queue: PlatformViewerEvent[], event: PlatformVi
 }
 
 function compareQueuedViewerEvents(a: PlatformViewerEvent, b: PlatformViewerEvent) {
+  // Tier 1: 課金イベント（スパチャ等）を必ず最優先で返す。
   if (a.isMonetized !== b.isMonetized) {
     return a.isMonetized ? -1 : 1
   }
 
+  // Tier 2: triage スコアが高いものを優先（コメントの返信価値）。
   const scoreDelta = assessViewerEventTriage(b).score - assessViewerEventTriage(a).score
 
   if (scoreDelta !== 0) {
     return scoreDelta
   }
 
+  // Tier 3: 同優先度なら受信時刻の古い順（FIFO）。
   return Date.parse(a.receivedAt) - Date.parse(b.receivedAt)
 }
 
