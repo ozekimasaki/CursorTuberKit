@@ -57,9 +57,9 @@ Copy-Item .env.example .env
 ```env
 AI_PROVIDER=cursor
 CURSOR_API_KEY=crsr_your_api_key_here
-CURSOR_MODEL=composer-2
-CURSOR_CHARACTER_MODEL=composer-2
-CURSOR_EMOTION_MODEL=composer-2
+CURSOR_MODEL=composer-2.5
+CURSOR_CHARACTER_MODEL=composer-2.5
+CURSOR_EMOTION_MODEL=composer-2.5
 VOICEVOX_URL=http://127.0.0.1:50021
 VOICEVOX_SPEAKER=1
 PORT=8787

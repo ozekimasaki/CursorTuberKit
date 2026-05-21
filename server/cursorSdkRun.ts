@@ -3,6 +3,7 @@ import type { CursorTokenUsage, CursorToolCallTelemetry } from "./cursorTypes.js
 
 type CursorRunCollectionOptions = {
   onText?: (text: string) => void
+  signal?: AbortSignal
 }
 
 export type CursorCollectedRun = {
@@ -18,6 +19,24 @@ export async function collectCursorRun(run: Run, options: CursorRunCollectionOpt
   const toolCalls: CursorToolCallTelemetry[] = []
   let text = ""
   let usage: CursorTokenUsage | null = null
+  let cancelPromise: Promise<void> | null = null
+  const cancelRunOnce = () => {
+    if (!cancelPromise) {
+      cancelPromise = run.cancel().catch(() => undefined)
+    }
+    return cancelPromise
+  }
+  const onAbort = () => {
+    void cancelRunOnce()
+  }
+
+  if (options.signal?.aborted) {
+    await cancelRunOnce()
+    throw createAbortError()
+  }
+
+  options.signal?.addEventListener("abort", onAbort, { once: true })
+
   const stopStatusSubscription = run.onDidChangeStatus((status) => {
     if (statusHistory.at(-1) !== status) {
       statusHistory.push(status)
@@ -26,6 +45,9 @@ export async function collectCursorRun(run: Run, options: CursorRunCollectionOpt
 
   try {
     for await (const event of run.stream()) {
+      if (options.signal?.aborted) {
+        throw createAbortError()
+      }
       if (event.type === "assistant") {
         for (const block of event.message.content) {
           if (block.type === "text" && block.text) {
@@ -64,7 +86,15 @@ export async function collectCursorRun(run: Run, options: CursorRunCollectionOpt
       }
     }
 
+    if (options.signal?.aborted) {
+      throw createAbortError()
+    }
+
     const result = await run.wait()
+
+    if (options.signal?.aborted) {
+      throw createAbortError()
+    }
 
     if (statusHistory.at(-1) !== result.status) {
       statusHistory.push(result.status)
@@ -78,8 +108,15 @@ export async function collectCursorRun(run: Run, options: CursorRunCollectionOpt
       usage,
     }
   } finally {
+    options.signal?.removeEventListener("abort", onAbort)
     stopStatusSubscription()
   }
+}
+
+function createAbortError() {
+  const error = new Error("Cursor run aborted")
+  error.name = "AbortError"
+  return error
 }
 
 function normalizeTokenCount(value: unknown) {

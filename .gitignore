@@ -10,3 +10,4 @@ memory/
 .cursor/hook-state/
 .cursor/runtime/
 .cursor/tmp-max-response.json
+.cursor-tmp-*.json

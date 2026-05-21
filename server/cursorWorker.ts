@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto"
 import { access, mkdir, readFile, rm, unlink, writeFile } from "node:fs/promises"
 import path from "node:path"
-import { Agent, type Run, type SDKAgent } from "@cursor/sdk"
+import { Agent, CursorSdkError, type Run, type SDKAgent } from "@cursor/sdk"
 import { characterSinNames, normalizeCharacterSinValues, type CharacterSinName } from "../shared/characterState.js"
 import type { CursorPromptMode } from "../shared/cursorPrompt.js"
 import type { ChatActionPayload, ChatMetadataPayload, ChatSessionPayload } from "../shared/chatStream.js"
@@ -471,6 +471,12 @@ async function startCursorRun(agent: SDKAgent, compiledPrompt: string, selectedM
 }
 
 function shouldForceLocalRunRetry(error: unknown) {
+  if (error instanceof CursorSdkError) {
+    if (error.code === "agent_busy" || error.status === 409) {
+      return true
+    }
+  }
+
   if (!(error instanceof Error)) {
     return false
   }
@@ -601,7 +607,7 @@ async function applyHookDrivenCharacterDrift(options: {
     await updateCharacterRuntimeSinValuesFromHook(analysis.targetSins, options.currentSins)
     return {
       applied: true,
-      detail: `${hookObserved ? "Composer 2 で hook 後の感情増減を再評価し、hidden state を更新しました。" : "stop hook は観測できませんでしたが、Composer 2 で完了済み返答から hidden state を更新しました。"} ${analysis.summary}`,
+      detail: `${hookObserved ? "Composer 2.5 で hook 後の感情増減を再評価し、hidden state を更新しました。" : "stop hook は観測できませんでしたが、Composer 2.5 で完了済み返答から hidden state を更新しました。"} ${analysis.summary}`,
       telemetry: analysis.telemetry,
     }
   } catch (error) {
@@ -613,7 +619,7 @@ async function applyHookDrivenCharacterDrift(options: {
         await updateCharacterRuntimeSinValuesFromHook(fallbackTargets, options.currentSins)
         return {
           applied: true,
-          detail: `${hookObserved ? "" : "stop hook は観測できませんでしたが、"}Composer 2 の hook 感情分析は失敗したため、Character Director の seven deadly sins を代わりに反映しました。`,
+          detail: `${hookObserved ? "" : "stop hook は観測できませんでしたが、"}Composer 2.5 の hook 感情分析は失敗したため、Character Director の seven deadly sins を代わりに反映しました。`,
           telemetry: null,
         }
       } catch (fallbackError) {

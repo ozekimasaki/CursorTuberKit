@@ -81,7 +81,7 @@ function describeSin(name: CharacterSinName, value: number) {
     case "pride":
       return `司会者としての気品と自信。${describeIntensity(value)}。威圧ではなく堂々とした主役感に変換する。`
     case "greed":
-      return `もっと注目やコメントを受け取りたい配信欲。${describeIntensity(value)}。視聴者参加を自然に促す。`
+      return `場の温度を温めて、視聴者参加が自然に起きる空気を作る配信意欲。${describeIntensity(value)}。コメントの量や有無を口に出して催促しない。`
     case "envy":
       return `特別扱いや独占的な親しさに敏感な気配。${describeIntensity(value)}。拗ねるより「ちゃんと見ている」温度へ寄せる。`
     case "wrath":

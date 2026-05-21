@@ -70,6 +70,10 @@ type SettingsModalProps = {
   ) => CharacterPreset | Promise<CharacterPreset | null> | null
   onChatMemoryClear: () => void | Promise<void>
   onChatSettingsSave: (settings: ChatSettings) => void | Promise<void>
+  onPersonaAutoRewriteRequest: () => void | Promise<void>
+  personaAutoRewriteBusy: boolean
+  personaAutoRewriteNotice: string | null
+  personaAutoRewriteUpdatedAt: string | null
 }
 
 export function SettingsModal(props: SettingsModalProps) {
@@ -113,6 +117,10 @@ export function SettingsModal(props: SettingsModalProps) {
     onCharacterPresetUpdate,
     onChatMemoryClear,
     onChatSettingsSave,
+    onPersonaAutoRewriteRequest,
+    personaAutoRewriteBusy,
+    personaAutoRewriteNotice,
+    personaAutoRewriteUpdatedAt,
   } = props
 
   const [characterNameDraft, setCharacterNameDraft] = useState(chatSettings.characterName)
@@ -159,10 +167,7 @@ export function SettingsModal(props: SettingsModalProps) {
     characterName: characterNameDraft.trim() || characterProfile.name,
     characterPrompt: characterPromptDraft,
   })
-  const isCharacterDraftDirty =
-    characterNameDraft !== chatSettings.characterName ||
-    characterFullPromptDraft !== chatSettings.characterFullPrompt ||
-    characterPromptDraft !== chatSettings.characterPrompt
+  const isCharacterDraftDirty = characterNameDraft !== chatSettings.characterName
   const isMemoryDirty =
     memoryModeDraft !== chatSettings.memory.mode || memoryPersistDraft !== chatSettings.memory.persistResponses
   const isSettingsDirty = isCharacterDraftDirty || isMemoryDirty
@@ -306,32 +311,21 @@ export function SettingsModal(props: SettingsModalProps) {
                   disabled={chatSettingsBusy || chatMemoryClearBusy || characterPresetBusy}
                 />
               </label>
-              <label className="field">
+              <div className="field">
                 <span className="card__key">キャラ設定（短く）</span>
-                <textarea
-                  className="field__input"
-                  rows={6}
-                  maxLength={maxCharacterPromptLength}
-                  value={characterPromptDraft}
-                  onChange={(e) => setCharacterPromptDraft(e.target.value)}
-                  disabled={chatSettingsBusy || chatMemoryClearBusy || characterPresetBusy}
-                />
-              </label>
-              <label className="field">
+                <pre className="character-draft__preview" aria-readonly="true">{characterPromptDraft || "(未設定)"}</pre>
+              </div>
+              <div className="field">
                 <span className="card__key">詳しい指示</span>
-                <textarea
-                  className="field__input"
-                  rows={8}
-                  maxLength={maxCharacterFullPromptLength}
-                  value={characterFullPromptDraft}
-                  onChange={(e) => setCharacterFullPromptDraft(e.target.value)}
-                  disabled={chatSettingsBusy || chatMemoryClearBusy || characterPresetBusy}
-                />
-              </label>
+                <pre className="character-draft__preview" aria-readonly="true">{characterFullPromptDraft || "(未設定)"}</pre>
+              </div>
               <details>
-                <summary>プレビューを見る</summary>
+                <summary>反映後プロンプトを見る</summary>
                 <pre className="character-draft__preview">{renderedCharacterFullPrompt}</pre>
               </details>
+              <p className="card__hint card__hint--compact">
+                ※ プロンプト本文（キャラ設定・詳しい指示）は AI が直近の会話を踏まえて自動で書き換えます。手動編集は無効化されています。
+              </p>
               <div className="composer__actions">
                 <button
                   className="btn btn--primary"
@@ -339,15 +333,7 @@ export function SettingsModal(props: SettingsModalProps) {
                   onClick={() => void saveDraftSettings()}
                   disabled={chatSettingsBusy || characterPresetBusy || !isSettingsDirty}
                 >
-                  {chatSettingsBusy ? "保存中…" : "保存"}
-                </button>
-                <button
-                  className="btn btn--secondary"
-                  type="button"
-                  onClick={resetDraftToDefaults}
-                  disabled={chatSettingsBusy || chatMemoryClearBusy || characterPresetBusy}
-                >
-                  初期化
+                  {chatSettingsBusy ? "保存中…" : "名前を保存"}
                 </button>
               </div>
               {chatSettingsNotice && (
@@ -360,82 +346,36 @@ export function SettingsModal(props: SettingsModalProps) {
             <div className="card">
               <div className="card__header">
                 <div>
-                  <p className="card__title">プリセット</p>
-                  <p className="card__hint card__hint--compact">よく使う設定を保存しておけます。</p>
+                  <p className="card__title">AI 自動更新</p>
+                  <p className="card__hint card__hint--compact">
+                    会話の流れを踏まえて AI がプロンプトを書き換えます。自走で定期実行されますが、ここから即時実行も可能です。
+                  </p>
                 </div>
+                <span className={`info-chip info-chip--${personaAutoRewriteBusy ? "warn" : "muted"}`}>
+                  {personaAutoRewriteBusy ? "更新中" : "待機中"}
+                </span>
               </div>
-              <label className="field">
-                <span className="card__key">保存名</span>
-                <input
-                  className="field__input"
-                  type="text"
-                  maxLength={maxCharacterPresetLabelLength}
-                  value={presetLabelDraft}
-                  onChange={(e) => setPresetLabelDraft(e.target.value)}
-                  placeholder="例: お嬢様モード"
-                  disabled={characterPresetBusy}
-                />
-              </label>
-              <label className="field">
-                <span className="card__key">保存済みプリセット</span>
-                <select
-                  className="field__input"
-                  value={selectedPresetId}
-                  onChange={(e) => {
-                    const nextPresetId = e.target.value
-                    setSelectedPresetId(nextPresetId)
-                    const nextPreset = characterPresets.find((preset) => preset.id === nextPresetId)
-                    if (nextPreset) {
-                      setPresetLabelDraft(nextPreset.label)
-                    }
-                  }}
-                  disabled={characterPresetBusy || characterPresets.length === 0}
-                >
-                  <option value="">選択してください</option>
-                  {characterPresets.map((preset) => (
-                    <option key={preset.id} value={preset.id}>
-                      {preset.label} · {preset.characterName}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <div className="card__row">
+                <span className="card__key">最終更新</span>
+                <span className="card__val">
+                  {personaAutoRewriteUpdatedAt
+                    ? new Date(personaAutoRewriteUpdatedAt).toLocaleString()
+                    : "未実行"}
+                </span>
+              </div>
               <div className="composer__actions">
                 <button
                   className="btn btn--secondary"
                   type="button"
-                  onClick={() => void handlePresetCreate()}
-                  disabled={!canSavePreset}
+                  onClick={() => void onPersonaAutoRewriteRequest()}
+                  disabled={personaAutoRewriteBusy}
                 >
-                  {characterPresetBusy ? "保存中…" : "保存"}
-                </button>
-                <button
-                  className="btn btn--secondary"
-                  type="button"
-                  onClick={handlePresetApply}
-                  disabled={!selectedPreset || characterPresetBusy}
-                >
-                  読込
-                </button>
-                <button
-                  className="btn btn--secondary"
-                  type="button"
-                  onClick={() => void handlePresetOverwrite()}
-                  disabled={!canOverwritePreset}
-                >
-                  上書き
-                </button>
-                <button
-                  className="btn btn--danger"
-                  type="button"
-                  onClick={() => void handlePresetDelete()}
-                  disabled={!canDeletePreset}
-                >
-                  削除
+                  {personaAutoRewriteBusy ? "更新中…" : "今すぐ AI に書き換えてもらう"}
                 </button>
               </div>
-              {characterPresetNotice && (
+              {personaAutoRewriteNotice && (
                 <div className="notice notice--ok">
-                  <p className="notice__text">{characterPresetNotice}</p>
+                  <p className="notice__text">{personaAutoRewriteNotice}</p>
                 </div>
               )}
             </div>

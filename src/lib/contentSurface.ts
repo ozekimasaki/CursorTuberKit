@@ -11,7 +11,7 @@ type ConversationTurnLike = {
 export type ContentTone = "active" | "error" | "muted" | "ok" | "warn"
 
 export type CharacterContentSuggestion = {
-  id: "opening" | "mini-corner" | "recap" | "teaser"
+  id: "opening" | "mini-corner" | "recap" | "teaser" | "chapter-break"
   prompt: string
   summary: string
   title: string
@@ -74,34 +74,41 @@ export function deriveCharacterContentSurface(
       {
         id: "opening",
         prompt:
-          `今のキャラ設定と継続文脈を保ったまま、配信のオープニングを2〜3文でお願いします。空気: ${autonomousContext}。最初の挨拶、今夜の雰囲気、コメント歓迎の一言を入れてください。コメントが少なくても自分から話題を広げられる導入にしてください。`,
-        summary: "第一声を整えて、コメントを拾いやすい空気を作ります。",
+          `今のキャラ設定と継続文脈を保ったまま、配信のオープニングを2〜3文でお願いします。空気: ${autonomousContext}。最初の挨拶と今夜の雰囲気を、自分の言葉で自然に話し始めてください。【重要】視聴者コメントの量(少ない/無い/ROM等)に言及しない。「コメント待ってる」「コメントしてね」のような呼びかけや催促もしない。視聴者状況へのメタ発言を一切避け、自分の興味や所感だけで話を立ち上げてください。`,
+        summary: "第一声を自然に整えます。",
         title: "Opening",
         tone: "ok",
       },
       {
         id: "mini-corner",
-        prompt: `空気メモ: ${autonomousContext}。「${topicLabel}」を入口にして、30秒くらいのミニコーナーを始めてください。配信でそのまま話せる軽い導入と、視聴者が乗りやすい問いかけを入れてください。視聴者コメントが無ければ、自分で自然につなげて進めてください。`,
+        prompt: `空気メモ: ${autonomousContext}。「${topicLabel}」を入口にして、30秒くらいのミニコーナーを自分の言葉で始めてください。【重要】視聴者コメントの量や有無に触れない。「コメント来ないけど」「コメントが少ないので」等のメタ発言は禁止。自分の体験や好み、観察を起点にして話を進めてください。`,
         summary: `「${topicLabel}」から小さな企画へ広げます。`,
         title: "Mini corner",
         tone: "active",
       },
       {
         id: "recap",
-        prompt: `空気メモ: ${autonomousContext}。ここまでの流れを配信者本人として2〜3文で recap してください。最近の話題や空気感をまとめて、次のひとことにつながる締めも入れてください。`,
+        prompt: `空気メモ: ${autonomousContext}。直前までの自分の発言を1〜2点拾って、配信者本人として2〜3文で recap し、そこから自然に次の一言へつなげてください。【重要】「コメント少ないけど」のような視聴者状況へのメタ発言はしない。自分の話の流れだけで完結させてください。`,
         summary:
           latestRunRecap?.responsePreview && latestRunRecap.responsePreview.trim()
             ? `直近の返答「${truncateText(latestRunRecap.responsePreview, 42)}」を踏まえて振り返ります。`
-            : "直近の流れを短く振り返ります。",
+            : "直近の自分の発言を踏まえて自然につなげます。",
         title: "Recap",
         tone: "warn",
       },
       {
         id: "teaser",
-        prompt: `空気メモ: ${autonomousContext}。次に広げると楽しい話題を teaser っぽく2文で出してください。いまの配信トーンを保ちつつ、続きを聞きたくなる一言で締めてください。コメントが無い場合でも、そのまま自分で続けられる形にしてください。`,
+        prompt: `空気メモ: ${autonomousContext}。次に広げると楽しい話題を teaser っぽく2文で出してください。いまの配信トーンを保ちつつ、続きを聞きたくなる一言で締めてください。【重要】視聴者コメントの量・有無に言及しない。「コメント無いから」「ROM専さん」等のメタ発言を絶対に入れず、自分の興味として自然に振る舞ってください。`,
         summary: "次の話題や小ネタへのつなぎを作ります。",
         title: "Teaser",
         tone: "muted",
+      },
+      {
+        id: "chapter-break",
+        prompt: `空気メモ: ${autonomousContext}。ここで一度、配信の流れに小さな区切りを入れてください。直前の話題を1点だけ短く受けてから、「ちょっとひと息」「ここから少し別の角度」など雰囲気を切り替える一言を挟み、次のコーナーや別テーマへ自然にスライドしてください。2〜3文で、押し付けがましくならないトーンで。【重要】視聴者コメントの量・有無、AI/プロンプト/自走モード等のメタ表現は一切禁止。直近の自分の発話に必ず1度は触れてから切り替えること。`,
+        summary: "コーナーや空気を切り替える区切りを入れます。",
+        title: "Chapter break",
+        tone: "warn",
       },
     ],
     tone: buildToneSurface(finalEmotion, providerMetadata),
@@ -242,7 +249,7 @@ function buildAutonomousContextHint(
     return `${formatEmotionLabel(finalEmotion.emotion)}寄りの配信トーン`
   }
 
-  return "コメントが少なくても自然に雑談をつなげたい時間帯"
+  return "落ち着いた配信トーンで、自分の関心から自然に話を広げたい時間帯"
 }
 
 function toneFromEmotion(emotion: FinalEmotionPayload["emotion"]): ContentTone {

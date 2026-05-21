@@ -1,17 +1,15 @@
 import express, { type Request, type Response } from "express"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
-import { chatAutomationReplyStyles, type ChatAutomationRequest } from "../shared/automation.js"
+import type { ChatAutomationRequest } from "../shared/automation.js"
 import type { CharacterArtifactsPayload } from "../shared/characterAgents.js"
 import { parseChatSettingsPatch } from "../shared/chatSettings.js"
 import { describeCharacterPresetValidation, parseCharacterPresetInput } from "../shared/characterPresets.js"
 import { characterProfile } from "../shared/characterProfile.js"
-import type { ChatStreamEvent } from "../shared/chatStream.js"
 import { inferEmotionFromText, type FinalEmotionPayload } from "../shared/emotion.js"
 import { classifyModeration, mergeModerationAssessments } from "../shared/moderation.js"
-import { isPlatformChatMode, type PlatformChatMode } from "../shared/platformChat.js"
 import { buildAutomationEnvelope } from "./automationSafety.js"
-import { buildAvatarPromptBundle, createEmptyMemKraftPromptContext, type ConversationTurn } from "./aiCommon.js"
+import { buildAvatarPromptBundle, createEmptyMemKraftPromptContext } from "./aiCommon.js"
 import { readAiProvider, resolveAiMetadata, streamAiResponse, validateAiConfiguration } from "./aiProvider.js"
 import { readChatSettings, updateChatSettings } from "./chatSettings.js"
 import { persistCharacterArtifacts } from "./characterArtifacts.js"
@@ -31,28 +29,40 @@ import {
   validateMemKraftConfiguration,
 } from "./memkraft.js"
 import { PlatformChatOrchestrator } from "./platformChatOrchestrator.js"
-import { RuntimeStatusTracker, type ChatRunRecap } from "./runtimeStatus.js"
+import { RuntimeStatusTracker } from "./runtimeStatus.js"
 import { getVoicevoxHealth, synthesizeVoice, VoicevoxError } from "./voicevox.js"
+import { AutopilotPlannerError, runAutopilotPlanner } from "./autopilotPlanner.js"
+import { PersonaCuratorError, runPersonaCurator } from "./personaCurator.js"
+import type { PersonaAutoRewriteRequestBody, PersonaAutoRewriteResponse } from "../shared/personaCurator.js"
+import { describeToneDirective } from "../shared/sinsBias.js"
+import type { AutopilotTopicRequestBody, AutopilotTopicResponse } from "../shared/autopilot.js"
+import { normalizeCharacterSinValues } from "../shared/characterState.js"
+import { asyncRoute, readRequestSignal } from "./lib/asyncRoute.js"
+import { getErrorMessage } from "./lib/errors.js"
+import {
+  prepareSseResponse,
+  writeChatEvent,
+  writeChatRunRecap,
+  writeMetadata,
+  writeSse,
+} from "./lib/sse.js"
+import {
+  parseAutopilotTopicBody,
+  parseChatAutomationRequest,
+  parsePersonaAutoRewriteBody,
+  parsePlatformChatConfig,
+  parsePrompt,
+  parseRecentTurns,
+  parseSpeechText,
+  type ChatStreamRequestBody,
+  type PlatformChatStartRequestBody,
+  type VoicevoxSynthesisRequestBody,
+} from "./lib/parsers.js"
 
 const isBunRuntime = typeof globalThis === "object" && "Bun" in globalThis
 
 if (!isBunRuntime) {
   await import("dotenv/config")
-}
-
-type ChatStreamRequestBody = {
-  automation?: unknown
-  prompt?: unknown
-  recentTurns?: unknown
-}
-
-type VoicevoxSynthesisRequestBody = {
-  text?: unknown
-}
-
-type PlatformChatStartRequestBody = {
-  mode?: unknown
-  target?: unknown
 }
 
 const __filename = fileURLToPath(import.meta.url)
@@ -78,67 +88,52 @@ app.get("/api/health", (_request, response) => {
   })
 })
 
-app.get("/api/runtime/status", async (_request, response) => {
-  try {
-    const settings = await readChatSettings()
-    const characterStateCurrent = await readCharacterRuntimeSinValues(settings.characterState.sins)
-    response.json({
-      ...runtimeStatusTracker.getSnapshot(),
-      characterStateCurrent,
-    })
-  } catch (error) {
-    response.status(500).json({ error: getErrorMessage(error) })
-  }
-})
+app.get("/api/runtime/status", asyncRoute(async (_request, response) => {
+  const settings = await readChatSettings()
+  const characterStateCurrent = await readCharacterRuntimeSinValues(settings.characterState.sins)
+  response.json({
+    ...runtimeStatusTracker.getSnapshot(),
+    characterStateCurrent,
+  })
+}))
 
-app.get("/api/chat-settings", async (_request, response) => {
-  try {
-    response.json(await readChatSettings())
-  } catch (error) {
-    response.status(500).json({ error: getErrorMessage(error) })
-  }
-})
+app.get("/api/chat-settings", asyncRoute(async (_request, response) => {
+  response.json(await readChatSettings())
+}))
 
-app.put("/api/chat-settings", async (request, response) => {
+app.put("/api/chat-settings", asyncRoute(async (request, response) => {
   const patch = parseChatSettingsPatch(request.body)
 
   if (!patch) {
-    response.status(400).json({ error: "characterName / characterPrompt / characterFullPrompt / characterState / memory を正しく指定してください。" })
+    response.status(400).json({ error: "characterName / characterState / memory を正しく指定してください。" })
     return
   }
 
-  try {
-    const settings = await updateChatSettings(patch)
+  // characterPrompt / characterFullPrompt is now AI-managed via /api/character/auto-rewrite.
+  // Silently ignore any client-supplied values for these fields.
+  delete patch.characterPrompt
+  delete patch.characterFullPrompt
 
-    if (patch.characterState?.sins) {
-      settings.characterState.sins = await resetCharacterRuntimeSinValues(settings.characterState.sins)
-    }
+  const settings = await updateChatSettings(patch)
 
-    response.json(settings)
-  } catch (error) {
-    response.status(500).json({ error: getErrorMessage(error) })
+  if (patch.characterState?.sins) {
+    settings.characterState.sins = await resetCharacterRuntimeSinValues(settings.characterState.sins)
   }
-})
 
-app.post("/api/chat-settings/memory/clear", async (_request, response) => {
-  try {
-    await validateMemKraftConfiguration()
-    await clearMemKraftMemory()
-    response.json({ ok: true })
-  } catch (error) {
-    response.status(500).json({ error: getErrorMessage(error) })
-  }
-})
+  response.json(settings)
+}))
 
-app.get("/api/chat-settings/presets", async (_request, response) => {
-  try {
-    response.json(await readCharacterPresets())
-  } catch (error) {
-    response.status(500).json({ error: getErrorMessage(error) })
-  }
-})
+app.post("/api/chat-settings/memory/clear", asyncRoute(async (_request, response) => {
+  await validateMemKraftConfiguration()
+  await clearMemKraftMemory()
+  response.json({ ok: true })
+}))
 
-app.post("/api/chat-settings/presets", async (request, response) => {
+app.get("/api/chat-settings/presets", asyncRoute(async (_request, response) => {
+  response.json(await readCharacterPresets())
+}))
+
+app.post("/api/chat-settings/presets", asyncRoute(async (request, response) => {
   const input = parseCharacterPresetInput(request.body)
 
   if (!input) {
@@ -146,14 +141,10 @@ app.post("/api/chat-settings/presets", async (request, response) => {
     return
   }
 
-  try {
-    response.status(201).json(await createCharacterPreset(input))
-  } catch (error) {
-    response.status(500).json({ error: getErrorMessage(error) })
-  }
-})
+  response.status(201).json(await createCharacterPreset(input))
+}))
 
-app.put("/api/chat-settings/presets/:presetId", async (request, response) => {
+app.put("/api/chat-settings/presets/:presetId", asyncRoute(async (request, response) => {
   const input = parseCharacterPresetInput(request.body)
 
   if (!input) {
@@ -161,34 +152,26 @@ app.put("/api/chat-settings/presets/:presetId", async (request, response) => {
     return
   }
 
-  try {
-    const preset = await updateCharacterPreset(request.params.presetId, input)
+  const preset = await updateCharacterPreset(request.params.presetId, input)
 
-    if (!preset) {
-      response.status(404).json({ error: "プリセットが見つかりません。" })
-      return
-    }
-
-    response.json(preset)
-  } catch (error) {
-    response.status(500).json({ error: getErrorMessage(error) })
+  if (!preset) {
+    response.status(404).json({ error: "プリセットが見つかりません。" })
+    return
   }
-})
 
-app.delete("/api/chat-settings/presets/:presetId", async (request, response) => {
-  try {
-    const deleted = await deleteCharacterPreset(request.params.presetId)
+  response.json(preset)
+}))
 
-    if (!deleted) {
-      response.status(404).json({ error: "プリセットが見つかりません。" })
-      return
-    }
+app.delete("/api/chat-settings/presets/:presetId", asyncRoute(async (request, response) => {
+  const deleted = await deleteCharacterPreset(request.params.presetId)
 
-    response.json({ ok: true })
-  } catch (error) {
-    response.status(500).json({ error: getErrorMessage(error) })
+  if (!deleted) {
+    response.status(404).json({ error: "プリセットが見つかりません。" })
+    return
   }
-})
+
+  response.json({ ok: true })
+}))
 
 app.get("/api/voicevox/health", async (_request, response) => {
   const abortController = new AbortController()
@@ -236,29 +219,21 @@ app.get("/api/platform-chat/stream", (_request, response) => {
 
 app.post(
   "/api/platform-chat/start",
-  async (request: Request<unknown, unknown, PlatformChatStartRequestBody>, response) => {
-    const config = parsePlatformChatConfig(request.body)
+  asyncRoute(async (request, response) => {
+    const config = parsePlatformChatConfig(request.body as PlatformChatStartRequestBody)
 
     if (!config) {
       response.status(400).json({ error: "mode と target を正しく指定してください。" })
       return
     }
 
-    try {
-      response.json(await platformChatOrchestrator.start(config.mode, config.target))
-    } catch (error) {
-      response.status(500).json({ error: getErrorMessage(error) })
-    }
-  },
+    response.json(await platformChatOrchestrator.start(config.mode, config.target))
+  }),
 )
 
-app.post("/api/platform-chat/stop", async (_request, response) => {
-  try {
-    response.json(await platformChatOrchestrator.stop())
-  } catch (error) {
-    response.status(500).json({ error: getErrorMessage(error) })
-  }
-})
+app.post("/api/platform-chat/stop", asyncRoute(async (_request, response) => {
+  response.json(await platformChatOrchestrator.stop())
+}))
 
 app.post(
   "/api/voicevox/synthesis",
@@ -301,6 +276,8 @@ app.post("/api/chat/stream", async (request: Request<Record<string, never>, unkn
   const prompt = parsePrompt(request.body)
   const recentTurns = parseRecentTurns(request.body)
   const automationRequest = parseChatAutomationRequest(request.body)
+  const inputKind: "viewer-comment" | "self-driven" =
+    request.body?.inputKind === "self-driven" ? "self-driven" : "viewer-comment"
 
   if (!prompt) {
     response.status(400).json({ error: "prompt は1文字以上4000文字以下で指定してください。" })
@@ -373,6 +350,7 @@ app.post("/api/chat/stream", async (request: Request<Record<string, never>, unkn
   const promptBundle = buildAvatarPromptBundle(prompt, {
     characterContext,
     chatSettings,
+    inputKind,
     memoryContext: memKraftContext,
     recentTurns,
     replyStyle: automationRequest?.replyStyle,
@@ -677,273 +655,146 @@ if (process.env.NODE_ENV === "production") {
   })
 }
 
+app.post(
+  "/api/autopilot/topic",
+  async (
+    request: Request<Record<string, never>, unknown, AutopilotTopicRequestBody>,
+    response: Response<AutopilotTopicResponse | { error: string }>,
+  ) => {
+    const body = parseAutopilotTopicBody(request.body)
+
+    if (!body) {
+      response.status(400).json({ error: "autopilot topic request の形式が不正です。" })
+      return
+    }
+
+    const apiKey = process.env.CURSOR_API_KEY?.trim()
+    if (!apiKey) {
+      response.status(503).json({ error: "CURSOR_API_KEY が未設定です。" })
+      return
+    }
+
+    let chatSettings
+    try {
+      chatSettings = await readChatSettings()
+    } catch (error) {
+      response.status(500).json({ error: getErrorMessage(error) })
+      return
+    }
+
+    const runtimeSins = await readCharacterRuntimeSinValues(chatSettings.characterState.sins).catch(
+      () => chatSettings.characterState.sins,
+    )
+    const effectiveSins = normalizeCharacterSinValues({ ...runtimeSins, ...body.characterStateSins })
+
+    let memoryContext
+    try {
+      if (chatSettings.memory.mode !== "off") {
+        await validateMemKraftConfiguration()
+        memoryContext = await loadMemKraftPromptContext()
+      }
+    } catch {
+      memoryContext = undefined
+    }
+
+    const route = resolveAiMetadata()
+    const plannerModel = process.env.CURSOR_AUTOPILOT_MODEL?.trim() || route.characterAgentModel || route.model
+
+    try {
+      const result = await runAutopilotPlanner({
+        apiKey,
+        model: plannerModel,
+        body: {
+          ...body,
+          characterStateSins: effectiveSins,
+          toneDirective: body.toneDirective ?? describeToneDirective(effectiveSins),
+        },
+        memoryContext,
+      })
+
+      response.json(result)
+    } catch (error) {
+      const status = error instanceof AutopilotPlannerError ? 502 : 500
+      response.status(status).json({ error: getErrorMessage(error) })
+    }
+  },
+)
+
+app.post(
+  "/api/character/auto-rewrite",
+  async (
+    request: Request<Record<string, never>, unknown, PersonaAutoRewriteRequestBody>,
+    response: Response<PersonaAutoRewriteResponse | { error: string }>,
+  ) => {
+    const body = parsePersonaAutoRewriteBody(request.body)
+    if (!body) {
+      response.status(400).json({ error: "auto-rewrite request の形式が不正です。" })
+      return
+    }
+
+    const apiKey = process.env.CURSOR_API_KEY?.trim()
+    if (!apiKey) {
+      response.status(503).json({ error: "CURSOR_API_KEY が未設定です。" })
+      return
+    }
+
+    let chatSettings
+    try {
+      chatSettings = await readChatSettings()
+    } catch (error) {
+      response.status(500).json({ error: getErrorMessage(error) })
+      return
+    }
+
+    const runtimeSins =
+      body.runtimeSins ??
+      (await readCharacterRuntimeSinValues(chatSettings.characterState.sins).catch(
+        () => chatSettings.characterState.sins,
+      ))
+
+    let memoryContext = createEmptyMemKraftPromptContext()
+    try {
+      if (chatSettings.memory.mode !== "off") {
+        await validateMemKraftConfiguration()
+        memoryContext = await loadMemKraftPromptContext()
+      }
+    } catch {
+      memoryContext = createEmptyMemKraftPromptContext()
+    }
+
+    const route = resolveAiMetadata()
+    const curatorModel =
+      process.env.CURSOR_PERSONA_CURATOR_MODEL?.trim() || route.characterAgentModel || route.model
+
+    try {
+      const result = await runPersonaCurator({
+        apiKey,
+        model: curatorModel,
+        currentSettings: chatSettings,
+        recentTurns: body.recentTurns,
+        runtimeSins: normalizeCharacterSinValues(runtimeSins),
+        memoryContext,
+        signal: readRequestSignal(request),
+      })
+
+      const saved = await updateChatSettings({
+        characterPrompt: result.characterPrompt,
+        characterFullPrompt: result.characterFullPrompt,
+      })
+
+      response.json({
+        settings: saved,
+        summary: result.summary,
+        updatedAt: new Date().toISOString(),
+      })
+    } catch (error) {
+      const status = error instanceof PersonaCuratorError ? 502 : 500
+      response.status(status).json({ error: getErrorMessage(error) })
+    }
+  },
+)
+
 app.listen(port, () => {
   console.log(`${characterProfile.agentName} server listening on http://localhost:${port}`)
 })
 
-function parsePrompt(body: ChatStreamRequestBody) {
-  if (typeof body.prompt !== "string") {
-    return null
-  }
-
-  const prompt = body.prompt.trim()
-
-  if (!prompt || prompt.length > 4000) {
-    return null
-  }
-
-  return prompt
-}
-
-function parseRecentTurns(body: ChatStreamRequestBody): ConversationTurn[] | null {
-  if (body.recentTurns === undefined) {
-    return []
-  }
-
-  if (!Array.isArray(body.recentTurns) || body.recentTurns.length > 12) {
-    return null
-  }
-
-  const turns: ConversationTurn[] = []
-
-  for (const entry of body.recentTurns) {
-    if (!isRecord(entry)) {
-      return null
-    }
-
-    if ((entry.role !== "user" && entry.role !== "assistant") || typeof entry.text !== "string") {
-      return null
-    }
-
-    const text = entry.text.trim()
-
-    if (!text || text.length > 1000) {
-      return null
-    }
-
-    turns.push({ role: entry.role, text })
-  }
-
-  return turns
-}
-
-function parseChatAutomationRequest(body: ChatStreamRequestBody): ChatAutomationRequest | null {
-  if (body.automation === undefined) {
-    return {
-      source: "manual",
-    }
-  }
-
-  if (!isRecord(body.automation)) {
-    return null
-  }
-
-  if (body.automation.source !== "manual" && body.automation.source !== "platform_auto_reply") {
-    return null
-  }
-
-  if (body.automation.target === undefined) {
-    return {
-      replyStyle: parseChatAutomationReplyStyle(body.automation.replyStyle),
-      source: body.automation.source,
-    }
-  }
-
-  if (!isRecord(body.automation.target)) {
-    return null
-  }
-
-  const platform =
-    body.automation.target.platform === undefined
-      ? undefined
-      : isPlatformChatMode(body.automation.target.platform)
-        ? body.automation.target.platform
-        : null
-  const target =
-    body.automation.target.target === undefined
-      ? undefined
-      : typeof body.automation.target.target === "string"
-        ? body.automation.target.target.trim()
-        : null
-
-  if (platform === null || target === null) {
-    return null
-  }
-
-  return {
-    replyStyle: parseChatAutomationReplyStyle(body.automation.replyStyle),
-    source: body.automation.source,
-    target: {
-      platform,
-      target: target || undefined,
-    },
-  }
-}
-
-function parseSpeechText(body: VoicevoxSynthesisRequestBody) {
-  if (typeof body.text !== "string") {
-    return null
-  }
-
-  const text = body.text.trim()
-
-  if (!text || text.length > 1000) {
-    return null
-  }
-
-  return text
-}
-
-function parseChatAutomationReplyStyle(value: unknown): ChatAutomationRequest["replyStyle"] {
-  return typeof value === "string" && chatAutomationReplyStyles.includes(value as (typeof chatAutomationReplyStyles)[number])
-    ? (value as ChatAutomationRequest["replyStyle"])
-    : undefined
-}
-
-function parsePlatformChatConfig(body: PlatformChatStartRequestBody): { mode: PlatformChatMode; target: string } | null {
-  if (!isPlatformChatMode(body.mode) || typeof body.target !== "string") {
-    return null
-  }
-
-  const target = body.target.trim()
-  if (!target || target.length > 400) {
-    return null
-  }
-
-  return {
-    mode: body.mode,
-    target,
-  }
-}
-
-function prepareSseResponse(response: Response) {
-  response.status(200)
-  response.setHeader("Content-Type", "text/event-stream; charset=utf-8")
-  response.setHeader("Cache-Control", "no-cache, no-transform")
-  response.setHeader("Connection", "keep-alive")
-  response.flushHeaders()
-}
-
-function writeSse(response: Response, event: string, data: unknown) {
-  response.write(`event: ${event}\n`)
-  response.write(`data: ${JSON.stringify(data)}\n\n`)
-}
-
-function writeMetadata(
-  response: Response,
-  event: string,
-  payload: {
-    detail?: string | null
-    label: string
-    name?: string | null
-    raw?: unknown
-    status?: string | null
-    task?: string | null
-  },
-) {
-  writeSse(response, event, {
-    detail: payload.detail ?? null,
-    label: payload.label,
-    name: payload.name ?? null,
-    raw: payload.raw ?? null,
-    status: payload.status ?? null,
-    task: payload.task ?? null,
-  })
-}
-
-function writeChatEvent(response: Response, event: ChatStreamEvent) {
-  switch (event.type) {
-    case "action":
-    case "character-artifacts":
-    case "emotion":
-    case "metadata":
-    case "session":
-      writeSse(response, event.type, event.payload)
-      return
-    case "done":
-      writeSse(response, "done", { ok: true })
-      return
-    case "error":
-      writeSse(response, "error", { message: event.message })
-      return
-    case "state":
-      writeSse(response, "state", { state: event.state })
-      return
-    case "text":
-      writeSse(response, "text", { text: event.text })
-      return
-  }
-}
-
-function writeChatRunRecap(response: Response, recap: ChatRunRecap) {
-  writeMetadata(response, "metadata", {
-    detail: `${recap.responseLength}文字 / ${formatDuration(recap.durationMs)} / ${
-      recap.emotion?.emotion ?? "neutral"
-    } / MemKraft ${recap.memKraftPersisted ? "ok" : "skip"} / Artifacts ${recap.characterMemoryPersisted ? "ok" : "skip"}`,
-    label: "今回の返答サマリー",
-    raw: recap,
-    status: recap.status === "error" ? "error" : recap.status === "aborted" ? "cancelled" : "done",
-  })
-}
-
-function formatDuration(durationMs: number) {
-  if (durationMs < 1000) {
-    return `${durationMs}ms`
-  }
-
-  return `${(durationMs / 1000).toFixed(durationMs >= 10_000 ? 0 : 1)}s`
-}
-
-function getErrorMessage(error: unknown) {
-  return extractErrorMessage(error, new Set()) ?? "AI応答の生成中に不明なエラーが発生しました。"
-}
-
-function extractErrorMessage(value: unknown, seen: Set<object>): string | null {
-  if (typeof value === "string") {
-    const message = value.trim()
-
-    if (!message) {
-      return null
-    }
-
-    const parsedJson = parseJsonMessage(message)
-
-    return extractErrorMessage(parsedJson, seen) ?? message
-  }
-
-  if (value instanceof Error) {
-    return extractErrorMessage(value.message, seen) ?? value.name
-  }
-
-  if (!isRecord(value)) {
-    return null
-  }
-
-  if (seen.has(value)) {
-    return null
-  }
-
-  seen.add(value)
-
-  return (
-    extractErrorMessage(value.message, seen) ??
-    extractErrorMessage(value.error, seen) ??
-    extractErrorMessage(value.details, seen)
-  )
-}
-
-function parseJsonMessage(message: string) {
-  if (!message.startsWith("{") && !message.startsWith("[")) {
-    return null
-  }
-
-  try {
-    return JSON.parse(message)
-  } catch {
-    return null
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null
-}

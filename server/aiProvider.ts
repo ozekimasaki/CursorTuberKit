@@ -1,9 +1,9 @@
 import type { ChatMetadataPayload, ChatProvider } from "../shared/chatStream.js"
 import type { StreamAiResponseOptions } from "./aiCommon.js"
 
-const DEFAULT_CURSOR_MODEL = "composer-2"
+const DEFAULT_CURSOR_MODEL = "composer-2.5"
 const DEFAULT_CURSOR_CHARACTER_AGENT_MODEL = DEFAULT_CURSOR_MODEL
-const DEFAULT_CURSOR_EMOTION_MODEL = "composer-2"
+const DEFAULT_CURSOR_EMOTION_MODEL = "composer-2.5"
 
 export type AiProvider = ChatProvider
 export type ProviderChatMetadata = Omit<ChatMetadataPayload, "characterState">

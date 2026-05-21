@@ -22,6 +22,8 @@
     "start:node": "node scripts/tasks.mjs start:node",
     "typecheck": "node scripts/tasks.mjs typecheck",
     "typecheck:bun": "node scripts/tasks.mjs typecheck:bun",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "memkraft:start": "node scripts/tasks.mjs memkraft:start",
     "memkraft:status": "node scripts/tasks.mjs memkraft:status",
     "memkraft:stop": "node scripts/tasks.mjs memkraft:stop",
@@ -55,6 +57,7 @@
     "concurrently": "^9.1.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
-    "vite": "^8.0.13"
+    "vite": "^8.0.13",
+    "vitest": "^4.1.7"
   }
 }

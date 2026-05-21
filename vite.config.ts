@@ -7,6 +7,19 @@ export default defineConfig({
   plugins: [react()],
   build: {
     outDir: "dist/client",
+    target: "es2022",
+    cssCodeSplit: true,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes("node_modules")) {
+            if (id.includes("lucide-react")) return "icons"
+            if (id.includes("react-dom") || /[\\/]react[\\/]/.test(id)) return "react"
+          }
+          return undefined
+        },
+      },
+    },
   },
   server: {
     proxy: {

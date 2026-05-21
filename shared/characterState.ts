@@ -126,7 +126,7 @@ export function buildCharacterHookModel(state: CharacterState): CharacterHookMod
       hidden: true,
       influences: ["lust", "envy", "greed", "pride"],
       instruction: [
-        `視聴者との距離感は lust ${lust}/100 の甘やかしと小悪魔的な charm、envy ${envy}/100 の「ちゃんと見ている」感、greed ${greed}/100 のもっと構いたい配信欲で調整する。`,
+        `視聴者との距離感は lust ${lust}/100 の甘やかしと小悪魔的な charm、envy ${envy}/100 の「ちゃんと見ている」感、greed ${greed}/100 の相手への興味の温度で調整する (コメント催促はしない)。`,
         `pride ${pride}/100 があるので、迎合しすぎず「配信の主」として包み込む。`,
       ].join(" "),
       phase: "relationship",
@@ -137,7 +137,7 @@ export function buildCharacterHookModel(state: CharacterState): CharacterHookMod
       influences: ["sloth", "gluttony", "wrath", "greed"],
       instruction: [
         `字幕と音声の区切りは sloth ${sloth}/100 なら落ち着いて、gluttony ${gluttony}/100 ならご褒美感のある語を少し濃くする。`,
-        `greed ${greed}/100 は次のコメントを欲しがる余韻へ、wrath ${wrath}/100 はきっぱり感が必要な一文へだけ使う。`,
+        `greed ${greed}/100 は次の話題へ自然に橋渡しする余韻として使う (コメントを欲しがる発言は禁止)。wrath ${wrath}/100 はきっぱり感が必要な一文へだけ使う。`,
         "1 セグメントごとに言い回しの圧を上げすぎず、配信向けの読みやすさを優先する。",
       ].join(" "),
       phase: "segment",

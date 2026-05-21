@@ -1,4 +1,4 @@
-import { type ChangeEvent, useEffect, useMemo, useRef, useState } from "react"
+import { type ChangeEvent, Suspense, lazy, useEffect, useMemo, useRef, useState } from "react"
 import { AlertTriangle, X } from "lucide-react"
 import {
   type AutomationAction,
@@ -20,8 +20,12 @@ import {
   type PlatformViewerEvent,
 } from "../shared/platformChat"
 import { OperatorConsole } from "./components/OperatorConsole"
-import { SettingsModal } from "./components/SettingsModal"
 import { StageView } from "./components/StageView"
+import {
+  useAutopilotScheduler,
+  useScheduleAutomaticContentSuggestion,
+} from "./hooks/useAutopilotScheduler"
+import { usePersonaAutoRewrite } from "./hooks/usePersonaAutoRewrite"
 import { type AvatarState } from "./components/MaidCatAvatar"
 import { type MotionPngAvatarHandle } from "./components/MotionPngAvatar"
 import { playAudioBlob } from "./lib/audioPlayback"
@@ -55,10 +59,33 @@ import {
   type ConversationTurn,
   type StreamMetadata,
 } from "./lib/streamAi"
+import {
+  buildPreparedReplySignature,
+  dequeuePreparedReply,
+  enqueuePreparedReply,
+  shouldAutoPlayPreparedReply,
+  type PreparedAutoReply,
+} from "./lib/preparedReplyQueue"
 import { fetchRuntimeStatus, isChatRunRecap, type ChatRunRecap } from "./lib/runtimeStatus"
 import type { Viseme } from "./lib/visemes"
 import { fetchVoicevoxHealth, synthesizeVoice, type VoicevoxHealth } from "./lib/voicevox"
 import { findBackgroundPreset } from "./lib/backgroundPresets"
+import { requestAutopilotTopic } from "./lib/autopilot"
+import {
+  appendRecentNoveltyScore,
+  averageNoveltyScore,
+  createAutopilotStalenessSnapshot,
+  getAutoContentSessionBase,
+  isAutopilotStale,
+  type AutomaticContentCandidate,
+} from "./lib/autopilotScheduler"
+import { derivePlannerHints } from "../shared/plannerHints"
+import {
+  computeSuggestionWeights,
+  describeToneDirective,
+  pickWeightedSuggestion,
+  type SuggestionContext,
+} from "../shared/sinsBias"
 import {
   defaultStageDisplayPreferences,
   loadAvatarMode,
@@ -73,6 +100,10 @@ import {
   type StageDisplayPreferences,
 } from "./lib/stagePreferences"
 import type { CharacterContentSuggestion, CharacterContentSurface } from "./lib/contentSurface"
+
+const SettingsModal = lazy(() =>
+  import("./components/SettingsModal").then((module) => ({ default: module.SettingsModal })),
+)
 
 export type StreamStatus = "ready" | "thinking" | "synthesizing" | "playing" | "error"
 
@@ -92,36 +123,10 @@ const COMPACT_REPLY_TRIGGER_COUNT = 6
 const COMPACT_REPLY_BATCH_SIZE = 6
 const AUTO_REPLY_BRIDGE_DELAY_MS = 1200
 const AUTO_REPLY_BRIDGE_TEXT = "コメント順番に読んでいくね。"
-const AUTO_CONTENT_OPENING_DELAY_MS = 250
-const AUTO_CONTENT_VIEWER_FOLLOWUP_DELAY_MS = 900
-const AUTO_CONTENT_MINI_CORNER_DELAY_MS = 1500
-const AUTO_CONTENT_RECAP_DELAY_MS = 2200
-const AUTO_CONTENT_TEASER_DELAY_MS = 3000
-const AUTO_CONTENT_PREFETCH_DELAY_MS = 250
-
-type AutomaticContentCandidate = {
-  anchor: string
-  reason: string
-  suggestion: CharacterContentSuggestion
-  source: "autopilot" | "opening" | "viewer"
-  viewerEventId?: string
-}
-
 type ViewerEventTriageDecision = {
   action: "queue" | "skip"
   reason: string
   score: number
-}
-
-type PreparedAutoReply = {
-  action: AutomationAction | null
-  finalEmotion: Emotion | null
-  id: string
-  isMonetized: boolean
-  moderation: ModerationAssessment | null
-  responseText: string
-  sequence: number
-  source: "content" | "viewer"
 }
 
 export type RuntimeTone = "active" | "error" | "muted" | "ok" | "warn"
@@ -447,15 +452,36 @@ export function App() {
   const preparedAutoReplySequenceRef = useRef(0)
   const preparedAutoReplyPlaybackBusyRef = useRef(false)
   const autoReplyGenerationAbortControllersRef = useRef<Set<AbortController>>(new Set())
-  const autoContentAbortRef = useRef<AbortController | null>(null)
-  const autoContentBusyRef = useRef(false)
-  const autoContentScheduledKeyRef = useRef<string | null>(null)
-  const autoContentExpandedViewerEventsRef = useRef<Set<string>>(new Set())
-  const autoContentSequenceRef = useRef(0)
-  const autoContentSessionBaseRef = useRef<string | null>(null)
+  const {
+    assistantTurnCountRef,
+    autoContentAbortRef,
+    autoContentBusyRef,
+    autoContentExpandedViewerEventsRef,
+    autoContentScheduledKeyRef,
+    autoContentSequenceRef,
+    autoContentSessionBaseRef,
+    openThreadsRef,
+    recentNoveltyScoresRef,
+    turnsSinceChapterBreakRef,
+    resetAutopilotSession,
+    syncAutopilotRecentTurns,
+  } = useAutopilotScheduler()
   const motionPngAvatarRef = useRef<MotionPngAvatarHandle | null>(null)
   const stageBackgroundInputRef = useRef<HTMLInputElement | null>(null)
   const motionPngFolderInputRef = useRef<HTMLInputElement | null>(null)
+  const {
+    handlePersonaAutoRewriteRequest,
+    handlePersonaAutoRewriteTick,
+    personaAutoRewriteBusy,
+    personaAutoRewriteNotice,
+    personaAutoRewriteUpdatedAt,
+  } = usePersonaAutoRewrite({
+    recentTurnsRef,
+    runtimeCharacterSins,
+    setChatSettings,
+    showError,
+    syncRuntimeStatus,
+  })
 
   useEffect(() => {
     if (typeof document === "undefined") return
@@ -696,6 +722,10 @@ export function App() {
       autoContentSequenceRef.current = 0
       autoContentSessionBaseRef.current = null
       autoReplySeenScopeRef.current = null
+      recentNoveltyScoresRef.current = []
+      openThreadsRef.current = []
+      turnsSinceChapterBreakRef.current = 0
+      assistantTurnCountRef.current = 0
       return
     }
 
@@ -734,20 +764,12 @@ export function App() {
       return
     }
 
-    const nextBase =
-      platformState.status === "connected"
-        ? `${platformState.mode ?? "chat"}:${platformState.target ?? "default"}`
-        : "autopilot"
-
-    if (autoContentSessionBaseRef.current === nextBase) {
-      return
-    }
-
-    autoContentSessionBaseRef.current = nextBase
-    autoContentSequenceRef.current = 0
-    autoContentExpandedViewerEventsRef.current = new Set()
-    autoContentScheduledKeyRef.current = null
+    resetAutopilotSession(getAutoContentSessionBase(autoReplyEnabled, platformState))
   }, [autoReplyEnabled, platformState.mode, platformState.status, platformState.target])
+
+  useEffect(() => {
+    syncAutopilotRecentTurns(recentTurns)
+  }, [recentTurns])
 
   useEffect(() => {
     if (!autoReplyEnabled) {
@@ -1561,6 +1583,7 @@ export function App() {
     ])
     recentTurnsRef.current = nextTurns
     setRecentTurns(nextTurns)
+    handlePersonaAutoRewriteTick()
   }
 
   function appendAssistantTurn(assistantText: string) {
@@ -1576,6 +1599,7 @@ export function App() {
     ])
     recentTurnsRef.current = nextTurns
     setRecentTurns(nextTurns)
+    handlePersonaAutoRewriteTick()
   }
 
   function enqueueAutoReplyEvent(event: PlatformViewerEvent) {
@@ -1634,25 +1658,11 @@ export function App() {
   function enqueuePreparedAutoReply(reply: PreparedAutoReply) {
     autoReplyRetryCountsRef.current.delete(reply.id)
     clearAutoReplyRetryTimer(reply.id)
-    const nextReplies = [...preparedAutoReplyQueueRef.current.filter((item) => item.id !== reply.id), reply]
-    const sortBySequence = (a: PreparedAutoReply, b: PreparedAutoReply) => a.sequence - b.sequence
-    const monetizedReplies = nextReplies.filter((item) => item.isMonetized).sort(sortBySequence)
-    const viewerReplies = nextReplies
-      .filter((item) => !item.isMonetized && item.source === "viewer")
-      .sort(sortBySequence)
-    const contentReplies = nextReplies
-      .filter((item) => !item.isMonetized && item.source === "content")
-      .sort(sortBySequence)
-
-    preparedAutoReplyQueueRef.current = [...monetizedReplies, ...viewerReplies, ...contentReplies]
-  }
-
-  function shouldAutoPlayPreparedReply(reply: PreparedAutoReply) {
-    return true
+    preparedAutoReplyQueueRef.current = enqueuePreparedReply(preparedAutoReplyQueueRef.current, reply)
   }
 
   function buildAutoReplyRetryKey(events: PlatformViewerEvent[]) {
-    return events.map((event) => event.id).sort().join("|")
+    return buildPreparedReplySignature(events.map((event) => event.id))
   }
 
   function scheduleAutoReplyRetry(events: PlatformViewerEvent[], message: string) {
@@ -1719,6 +1729,8 @@ export function App() {
     autoReplyRetryTimersRef.current.clear()
   }
 
+  // TODO(refactor): moving this trigger into useAutopilotScheduler would require threading
+  // App-owned runtime/playback setters and risks changing ordering; keep only pure scheduler parts extracted.
   async function triggerAutomaticContentSuggestion(
     candidate: AutomaticContentCandidate,
     candidateKey: string,
@@ -1744,6 +1756,96 @@ export function App() {
       }),
     )
 
+    let effectivePrompt = candidate.suggestion.prompt
+    let plannerTitle = candidate.suggestion.title
+
+    if (candidate.source === "autopilot") {
+      const plannerHints = derivePlannerHints(runtimeCharacterSins, {
+        recentNoveltyAverage: averageNoveltyScore(recentNoveltyScoresRef.current) ?? 50,
+        openThreadCount: openThreadsRef.current.length,
+        suggestion: candidate.suggestion.id,
+      })
+      const stalenessSnapshot = createAutopilotStalenessSnapshot(
+        liveViewerEventsRef.current,
+        recentTurnsRef.current,
+      )
+
+      try {
+        const planner = await requestAutopilotTopic(
+          {
+            baseSuggestionId: candidate.suggestion.id,
+            basePrompt: candidate.suggestion.prompt,
+            baseSummary: candidate.suggestion.summary,
+            baseTitle: candidate.suggestion.title,
+            characterStateSins: runtimeCharacterSins,
+            liveViewerEvent: liveViewerEvents[0]
+              ? { authorName: liveViewerEvents[0].authorName, text: liveViewerEvents[0].text }
+              : null,
+            recentAssistantTurns: recentTurnsRef.current
+              .filter((turn) => turn.role === "assistant")
+              .map((turn) => turn.text),
+            recentUserTurns: recentTurnsRef.current
+              .filter((turn) => turn.role === "user")
+              .map((turn) => turn.text),
+            toneDirective: describeToneDirective(runtimeCharacterSins),
+            openThreads: openThreadsRef.current,
+            recentNoveltyScores: recentNoveltyScoresRef.current,
+            plannerHints,
+          },
+          abortController.signal,
+        )
+
+        if (isAutopilotStale(stalenessSnapshot, liveViewerEventsRef.current, recentTurnsRef.current)) {
+          setRuntimeProgress((current) =>
+            appendRuntimeActivity(current, {
+              detail: "新しい入力が来たので自走候補を破棄しました",
+              kind: "content",
+              label: `${candidate.suggestion.title} は staleness gate で取消`,
+              status: "warn",
+            }),
+          )
+          autoContentBusyRef.current = false
+          autoContentAbortRef.current = null
+          return
+        }
+
+        if (planner.prompt) {
+          effectivePrompt = planner.prompt
+          plannerTitle = planner.title || plannerTitle
+          // Record novelty for future planner cycles + chapter-break tracking.
+          if (typeof planner.noveltyScore === "number" && Number.isFinite(planner.noveltyScore)) {
+            recentNoveltyScoresRef.current = appendRecentNoveltyScore(
+              recentNoveltyScoresRef.current,
+              planner.noveltyScore,
+            )
+          }
+          if (candidate.suggestion.id === "chapter-break") {
+            turnsSinceChapterBreakRef.current = 0
+          }
+          setRuntimeProgress((current) =>
+            appendRuntimeActivity(current, {
+              detail: `自走プランナー: ${planner.novelty || planner.summary || "ネタ更新"} (sources: ${planner.sources.join(", ") || "—"}${planner.retriedReason ? ` / retry=${planner.retriedReason}` : ""})`,
+              kind: "content",
+              label: `${plannerTitle} を自走プランナーで補強`,
+              status: "done",
+            }),
+          )
+        }
+      } catch (error) {
+        if (!abortController.signal.aborted && !isAbortError(error)) {
+          console.warn("autopilot planner failed, falling back to base prompt:", error)
+          setRuntimeProgress((current) =>
+            appendRuntimeActivity(current, {
+              detail: error instanceof Error ? error.message : "プランナー応答失敗",
+              kind: "content",
+              label: `${candidate.suggestion.title} は基底プロンプトでフォールバック`,
+              status: "warn",
+            }),
+          )
+        }
+      }
+    }
+
     try {
       const {
         emotionPayload,
@@ -1754,10 +1856,11 @@ export function App() {
         responseText,
         sessionMetadata: generatedSessionMetadata,
       } = await generatePromptResponse(
-        candidate.suggestion.prompt,
+        effectivePrompt,
         recentTurnsRef.current,
         abortController.signal,
         { source: "manual" },
+        candidate.source === "autopilot" ? "self-driven" : "viewer-comment",
       )
 
       if (generatedProviderMetadata) {
@@ -1960,7 +2063,7 @@ export function App() {
       return
     }
 
-    const nextReply = preparedAutoReplyQueueRef.current.shift()
+    const nextReply = dequeuePreparedReply(preparedAutoReplyQueueRef.current)
 
     if (!nextReply) {
       return
@@ -2221,11 +2324,7 @@ export function App() {
   }
 
   const visibleError = errorMessage && errorMessage !== dismissedError ? errorMessage : null
-  const autoContentSessionBase = autoReplyEnabled
-    ? platformState.status === "connected"
-      ? `${platformState.mode ?? "chat"}:${platformState.target ?? "default"}`
-      : "autopilot"
-    : null
+  const autoContentSessionBase = getAutoContentSessionBase(autoReplyEnabled, platformState)
   const contentSurface = useMemo(
     () =>
       deriveCharacterContentSurface({
@@ -2247,17 +2346,23 @@ export function App() {
     (preparedAutoReplyPlaybackBusyRef.current ? 1 : 0)
   const latestViewerEventAgeLabel = formatRelativeTimestamp(platformState.lastEventAt ?? liveViewerEvents[0]?.receivedAt ?? null)
   const nextAutomaticContentCandidate = useMemo(
-    () =>
-      selectAutomaticContentSuggestion({
+    () => {
+      const noveltyAverage = averageNoveltyScore(recentNoveltyScoresRef.current)
+      return selectAutomaticContentSuggestion({
         contentSurface,
         liveViewerEvents,
         platformState,
         recentTurns,
         sequence: autoContentSequenceRef.current,
         sessionKey: autoContentSessionBase,
+        sins: runtimeCharacterSins,
         usedViewerEventIds: autoContentExpandedViewerEventsRef.current,
-      }),
-    [autoContentSessionBase, autoReplyEnabled, contentSurface, liveViewerEvents, platformState, recentTurns],
+        openThreadCount: openThreadsRef.current.length,
+        turnsSinceChapterBreak: turnsSinceChapterBreakRef.current,
+        recentNoveltyAverage: noveltyAverage,
+      })
+    },
+    [autoContentSessionBase, autoReplyEnabled, contentSurface, liveViewerEvents, platformState, recentTurns, runtimeCharacterSins],
   )
   const runtimeDisplay = describeRuntimeDisplay(status, runtimeProgress, visibleError, {
     autoReplyEnabled,
@@ -2267,51 +2372,15 @@ export function App() {
   })
   const isBusy = status === "thinking" || status === "synthesizing" || status === "playing"
 
-  useEffect(() => {
-    if (
-      !autoReplyEnabled ||
-      (status !== "ready" && status !== "synthesizing" && status !== "playing") ||
-      autoContentBusyRef.current ||
-      preparedAutoReplyQueueRef.current.length > 0
-    ) {
-      autoContentScheduledKeyRef.current = null
-      return
-    }
-
-    if (!nextAutomaticContentCandidate) {
-      autoContentScheduledKeyRef.current = null
-      return
-    }
-
-    const candidateKey = `${nextAutomaticContentCandidate.suggestion.id}:${nextAutomaticContentCandidate.anchor}`
-
-    if (autoContentScheduledKeyRef.current === candidateKey) {
-      return
-    }
-
-    autoContentScheduledKeyRef.current = candidateKey
-    const delayMs =
-      status === "ready" ? automaticContentDelay(nextAutomaticContentCandidate) : AUTO_CONTENT_PREFETCH_DELAY_MS
-    const timeoutId = window.setTimeout(() => {
-      if (autoContentScheduledKeyRef.current === candidateKey) {
-        autoContentScheduledKeyRef.current = null
-      }
-
-      void triggerAutomaticContentSuggestion(nextAutomaticContentCandidate, candidateKey)
-    }, delayMs)
-
-    return () => {
-      window.clearTimeout(timeoutId)
-
-      if (autoContentScheduledKeyRef.current === candidateKey) {
-        autoContentScheduledKeyRef.current = null
-      }
-    }
-  }, [
+  useScheduleAutomaticContentSuggestion({
     autoReplyEnabled,
+    autoContentBusyRef,
+    autoContentScheduledKeyRef,
     nextAutomaticContentCandidate,
+    preparedAutoReplyQueueRef,
     status,
-  ])
+    triggerAutomaticContentSuggestion,
+  })
 
   const viewMode =
     typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("view") : null
@@ -2398,12 +2467,14 @@ export function App() {
         onSubmit={handlePrompt}
       />
 
-      <SettingsModal
-        open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-        avatarMode={avatarMode}
-        onAvatarModeChange={setAvatarMode}
-        backgroundAssetKind={stageBackgroundMedia?.kind ?? null}
+      <Suspense fallback={null}>
+        {settingsOpen && (
+          <SettingsModal
+            open={settingsOpen}
+            onClose={() => setSettingsOpen(false)}
+            avatarMode={avatarMode}
+            onAvatarModeChange={setAvatarMode}
+            backgroundAssetKind={stageBackgroundMedia?.kind ?? null}
         backgroundAssetLabel={stageBackgroundMedia?.name ?? null}
         backgroundPresetId={stageBackgroundMedia?.kind === "preset" ? stageBackgroundMedia.id : null}
         onBackgroundClear={handleStageBackgroundClear}
@@ -2438,7 +2509,13 @@ export function App() {
         onCharacterPresetUpdate={handleCharacterPresetUpdate}
         onChatMemoryClear={handleChatMemoryClear}
         onChatSettingsSave={handleChatSettingsSave}
-      />
+        onPersonaAutoRewriteRequest={handlePersonaAutoRewriteRequest}
+        personaAutoRewriteBusy={personaAutoRewriteBusy}
+        personaAutoRewriteNotice={personaAutoRewriteNotice}
+        personaAutoRewriteUpdatedAt={personaAutoRewriteUpdatedAt}
+          />
+        )}
+      </Suspense>
 
       {visibleError && (
         <div className="toast" role="alert">
@@ -2551,6 +2628,7 @@ async function generatePromptResponse(
   recentTurns: ConversationTurn[],
   signal: AbortSignal,
   automation?: ChatAutomationRequest,
+  inputKind: "viewer-comment" | "self-driven" = "viewer-comment",
 ) {
   let action: AutomationAction | null = null
   let automationEnvelope: AutomationEnvelope | null = null
@@ -2564,6 +2642,7 @@ async function generatePromptResponse(
 
   for await (const event of streamAiResponse({
     automation,
+    inputKind,
     prompt,
     recentTurns,
     signal,
@@ -2772,27 +2851,6 @@ function waitForQueuedPlaybackGap(signal: AbortSignal) {
   })
 }
 
-function automaticContentDelay(candidate: AutomaticContentCandidate) {
-  if (candidate.source === "opening") {
-    return AUTO_CONTENT_OPENING_DELAY_MS
-  }
-
-  if (candidate.source === "viewer") {
-    return AUTO_CONTENT_VIEWER_FOLLOWUP_DELAY_MS
-  }
-
-  switch (candidate.suggestion.id) {
-    case "mini-corner":
-      return AUTO_CONTENT_MINI_CORNER_DELAY_MS
-    case "recap":
-      return AUTO_CONTENT_RECAP_DELAY_MS
-    case "teaser":
-      return AUTO_CONTENT_TEASER_DELAY_MS
-    case "opening":
-      return AUTO_CONTENT_OPENING_DELAY_MS
-  }
-}
-
 function selectAutomaticContentSuggestion(options: {
   contentSurface: CharacterContentSurface
   liveViewerEvents: PlatformViewerEvent[]
@@ -2800,7 +2858,11 @@ function selectAutomaticContentSuggestion(options: {
   recentTurns: ConversationTurn[]
   sequence: number
   sessionKey: string | null
+  sins: CharacterSinValues
   usedViewerEventIds: Set<string>
+  openThreadCount: number
+  turnsSinceChapterBreak: number
+  recentNoveltyAverage: number | undefined
 }): AutomaticContentCandidate | null {
   if (!options.sessionKey) {
     return null
@@ -2839,7 +2901,16 @@ function selectAutomaticContentSuggestion(options: {
     }
   }
 
-  const nextSuggestionId = selectAutopilotSuggestionId(options.sequence, assistantTurns.length)
+  const nextSuggestionId = selectAutopilotSuggestionId(
+    options.sequence,
+    {
+      assistantTurnCount: assistantTurns.length,
+      openThreadCount: options.openThreadCount,
+      turnsSinceChapterBreak: options.turnsSinceChapterBreak,
+      recentNoveltyAverage: options.recentNoveltyAverage,
+    },
+    options.sins,
+  )
   const nextSuggestion = suggestions.get(nextSuggestionId)
 
   if (!nextSuggestion) {
@@ -2863,20 +2934,15 @@ function selectAutomaticContentSuggestion(options: {
 
 function selectAutopilotSuggestionId(
   sequence: number,
-  assistantTurnCount: number,
+  ctx: SuggestionContext,
+  sins: CharacterSinValues,
 ): CharacterContentSuggestion["id"] {
-  const cycle: CharacterContentSuggestion["id"][] = ["mini-corner", "teaser", "mini-corner", "recap"]
-  const candidate = cycle[sequence % cycle.length] ?? "mini-corner"
-
-  if (candidate === "teaser" && assistantTurnCount < 2) {
+  const weights = computeSuggestionWeights(sins, ctx)
+  const picked = pickWeightedSuggestion(weights, sequence)
+  if (picked === "opening") {
     return "mini-corner"
   }
-
-  if (candidate === "recap" && assistantTurnCount < 3) {
-    return "mini-corner"
-  }
-
-  return candidate
+  return picked
 }
 
 function assessViewerEventTriage(event: PlatformViewerEvent): ViewerEventTriageDecision {

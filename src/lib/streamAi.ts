@@ -55,6 +55,7 @@ type RawSseEvent = {
 
 type StreamAiRequest = {
   automation?: ChatAutomationRequest
+  inputKind?: "viewer-comment" | "self-driven"
   prompt: string
   recentTurns: ConversationTurn[]
   signal: AbortSignal
@@ -62,12 +63,13 @@ type StreamAiRequest = {
 
 export async function* streamAiResponse({
   automation,
+  inputKind,
   prompt,
   recentTurns,
   signal,
 }: StreamAiRequest): AsyncGenerator<AiStreamEvent> {
   const response = await fetch("/api/chat/stream", {
-    body: JSON.stringify({ automation, prompt, recentTurns }),
+    body: JSON.stringify({ automation, inputKind, prompt, recentTurns }),
     headers: {
       "Content-Type": "application/json",
     },
