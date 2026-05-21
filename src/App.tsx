@@ -5,7 +5,6 @@ import {
   type AutomationEnvelope,
   type ChatAutomationRequest,
 } from "../shared/automation"
-import type { CharacterPreset, CharacterPresetInput } from "../shared/characterPresets"
 import type { ChatMetadataPayload, ChatSessionPayload } from "../shared/chatStream"
 import { createDefaultChatSettings, type ChatSettings } from "../shared/chatSettings"
 import type { CharacterSinValues } from "../shared/characterState"
@@ -26,6 +25,7 @@ import {
   useScheduleAutomaticContentSuggestion,
 } from "./hooks/useAutopilotScheduler"
 import { useErrorToast } from "./hooks/useErrorToast"
+import { useChatSettingsManager } from "./hooks/useChatSettingsManager"
 import { usePersonaAutoRewrite } from "./hooks/usePersonaAutoRewrite"
 import { useVoicevoxHealthProbe } from "./hooks/useVoicevoxHealthProbe"
 import { type AvatarState } from "./components/MaidCatAvatar"
@@ -47,15 +47,6 @@ import {
   startPlatformChat,
   stopPlatformChat,
 } from "./lib/platformChat"
-import {
-  clearChatMemory,
-  createCharacterPreset,
-  deleteCharacterPreset,
-  fetchCharacterPresets,
-  fetchChatSettings,
-  updateCharacterPreset as saveCharacterPreset,
-  updateChatSettings,
-} from "./lib/chatSettings"
 import {
   streamAiResponse,
   type ConversationTurn,
@@ -180,12 +171,6 @@ export function App() {
   const [platformState, setPlatformState] = useState<PlatformChatState>(createIdlePlatformChatState())
   const [liveViewerEvents, setLiveViewerEvents] = useState<PlatformViewerEvent[]>([])
   const [autoReplyEnabled, setAutoReplyEnabled] = useState(false)
-  const [chatSettings, setChatSettings] = useState<ChatSettings>(createDefaultChatSettings)
-  const [characterPresets, setCharacterPresets] = useState<CharacterPreset[]>([])
-  const [chatSettingsAction, setChatSettingsAction] = useState<"idle" | "saving" | "clearing">("idle")
-  const [chatSettingsNotice, setChatSettingsNotice] = useState<string | null>(null)
-  const [characterPresetBusy, setCharacterPresetBusy] = useState(false)
-  const [characterPresetNotice, setCharacterPresetNotice] = useState<string | null>(null)
   const [stageBackgroundMedia, setStageBackgroundMedia] = useState<StageBackgroundMedia | null>(null)
   const [motionPngAssetStatus, setMotionPngAssetStatus] =
     useState<MotionPngAssetStatus>(defaultMotionPngAssetStatus)
@@ -209,6 +194,20 @@ export function App() {
   const autoReplySeenScopeRef = useRef<string | null>(null)
   const bridgeSpeechCacheRef = useRef<Map<string, Blob>>(new Map())
   const { clearError, dismissError, showError, visibleError } = useErrorToast()
+  const {
+    characterPresetBusy,
+    characterPresetNotice,
+    characterPresets,
+    chatSettings,
+    chatSettingsAction,
+    chatSettingsNotice,
+    handleChatMemoryClear,
+    handleCharacterPresetCreate,
+    handleCharacterPresetDelete,
+    handleCharacterPresetUpdate,
+    handleChatSettingsSave,
+    setChatSettings,
+  } = useChatSettingsManager({ showError, syncRuntimeStatus })
 
   async function syncRuntimeStatus(signal?: AbortSignal) {
     const snapshot = await fetchRuntimeStatus(signal)
@@ -291,38 +290,6 @@ export function App() {
     syncRuntimeStatus(abortController.signal).catch(() => {
       // ignore initial runtime status failures
     })
-
-    return () => abortController.abort()
-  }, [])
-
-  useEffect(() => {
-    const abortController = new AbortController()
-
-    fetchChatSettings(abortController.signal)
-      .then((settings) => {
-        setChatSettings(settings)
-      })
-      .catch((error) => {
-        if (!isAbortError(error)) {
-          showError(error instanceof Error ? error.message : "設定の取得に失敗しました。")
-        }
-      })
-
-    return () => abortController.abort()
-  }, [])
-
-  useEffect(() => {
-    const abortController = new AbortController()
-
-    fetchCharacterPresets(abortController.signal)
-      .then((presets) => {
-        setCharacterPresets(presets)
-      })
-      .catch((error) => {
-        if (!isAbortError(error)) {
-          showError(error instanceof Error ? error.message : "プリセットの取得に失敗しました。")
-        }
-      })
 
     return () => abortController.abort()
   }, [])
@@ -1104,107 +1071,6 @@ export function App() {
     autoContentAbortRef.current?.abort()
     autoContentScheduledKeyRef.current = null
     await runPrompt(prompt, { interruptCurrent: true })
-  }
-
-  async function handleChatSettingsSave(nextSettings: ChatSettings) {
-    setChatSettingsAction("saving")
-    setChatSettingsNotice(null)
-    setCharacterPresetNotice(null)
-
-    try {
-      const saved = await updateChatSettings({
-        characterName: nextSettings.characterName,
-        characterFullPrompt: nextSettings.characterFullPrompt,
-        characterPrompt: nextSettings.characterPrompt,
-        memory: nextSettings.memory,
-      })
-      setChatSettings(saved)
-      setChatSettingsNotice("キャラクター名・人格 prompt・長期記憶設定を保存しました。")
-      void syncRuntimeStatus()
-    } catch (error) {
-      if (!isAbortError(error)) {
-        showError(error instanceof Error ? error.message : "設定の保存に失敗しました。")
-      }
-    } finally {
-      setChatSettingsAction("idle")
-    }
-  }
-
-  async function handleCharacterPresetCreate(input: CharacterPresetInput) {
-    setCharacterPresetBusy(true)
-    setCharacterPresetNotice(null)
-    setChatSettingsNotice(null)
-
-    try {
-      const created = await createCharacterPreset(input)
-      setCharacterPresets((current) => [...current, created])
-      setCharacterPresetNotice(`プリセット「${created.label}」を保存しました。`)
-      return created
-    } catch (error) {
-      if (!isAbortError(error)) {
-        showError(error instanceof Error ? error.message : "プリセットの保存に失敗しました。")
-      }
-      return null
-    } finally {
-      setCharacterPresetBusy(false)
-    }
-  }
-
-  async function handleCharacterPresetUpdate(presetId: string, input: CharacterPresetInput) {
-    setCharacterPresetBusy(true)
-    setCharacterPresetNotice(null)
-    setChatSettingsNotice(null)
-
-    try {
-      const updated = await saveCharacterPreset(presetId, input)
-      setCharacterPresets((current) => current.map((preset) => (preset.id === updated.id ? updated : preset)))
-      setCharacterPresetNotice(`プリセット「${updated.label}」を更新しました。`)
-      return updated
-    } catch (error) {
-      if (!isAbortError(error)) {
-        showError(error instanceof Error ? error.message : "プリセットの更新に失敗しました。")
-      }
-      return null
-    } finally {
-      setCharacterPresetBusy(false)
-    }
-  }
-
-  async function handleCharacterPresetDelete(presetId: string) {
-    setCharacterPresetBusy(true)
-    setCharacterPresetNotice(null)
-    setChatSettingsNotice(null)
-
-    try {
-      await deleteCharacterPreset(presetId)
-      setCharacterPresets((current) => current.filter((preset) => preset.id !== presetId))
-      setCharacterPresetNotice("プリセットを削除しました。")
-      return true
-    } catch (error) {
-      if (!isAbortError(error)) {
-        showError(error instanceof Error ? error.message : "プリセットの削除に失敗しました。")
-      }
-      return false
-    } finally {
-      setCharacterPresetBusy(false)
-    }
-  }
-
-  async function handleChatMemoryClear() {
-    setChatSettingsAction("clearing")
-    setChatSettingsNotice(null)
-    setCharacterPresetNotice(null)
-
-    try {
-      await clearChatMemory()
-      setChatSettingsNotice("MemKraft の長期記憶をクリアしました。次の返答から新しい流れで組み直します。")
-    } catch (error) {
-      if (!isAbortError(error)) {
-        showError(error instanceof Error ? error.message : "長期記憶のクリアに失敗しました。")
-      }
-    } finally {
-      setChatSettingsAction("idle")
-    }
   }
 
   async function handlePlatformStart() {
