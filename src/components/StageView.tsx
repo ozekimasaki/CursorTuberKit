@@ -1,9 +1,11 @@
 import { useEffect, useRef, type CSSProperties, type ForwardedRef } from "react"
-import { MaidCatAvatar, type AvatarState } from "./MaidCatAvatar"
+import { type AvatarState } from "./MaidCatAvatar"
+import { SvgAvatar } from "./SvgAvatar"
 import { MotionPngAvatar, type MotionPngAvatarHandle } from "./MotionPngAvatar"
 import { ViewerEventFeed } from "./ViewerEventFeed"
 import type { Emotion } from "../../shared/emotion"
-import type { AvatarMode, MotionPngAssetStatus, MotionPngSettings, SvgAvatarSettings } from "../lib/avatarConfig"
+import type { SinExpressionSignal } from "../../shared/sinsExpression"
+import type { AvatarMode, MotionPngAssetStatus, MotionPngSettings, SvgAvatarSettings, SvgCharacterId } from "../lib/avatarConfig"
 import type { Viseme } from "../lib/visemes"
 import type { PlatformViewerEvent } from "../../shared/platformChat"
 
@@ -25,6 +27,8 @@ type StageViewProps = {
   motionPngFiles: File[]
   motionPngSettings: MotionPngSettings
   svgAvatarSettings: SvgAvatarSettings
+  svgCharacter: SvgCharacterId
+  sinSignal?: SinExpressionSignal
   onMotionPngAssetStatusChange?: (status: MotionPngAssetStatus) => void
   stageBackgroundMedia: StageBackground
   viseme: Viseme
@@ -43,6 +47,8 @@ export function StageView({
   motionPngFiles,
   motionPngSettings,
   svgAvatarSettings,
+  svgCharacter,
+  sinSignal,
   onMotionPngAssetStatusChange,
   stageBackgroundMedia,
   viseme,
@@ -125,11 +131,13 @@ export function StageView({
                   transform: `translate(calc(${svgAvatarSettings.offsetX}px * var(--stage-avatar-scale, 1)), calc(${svgAvatarSettings.offsetY}px * var(--stage-avatar-scale, 1))) scale(${svgAvatarSettings.scale})`,
                 } as CSSProperties}
               >
-                <MaidCatAvatar
+                <SvgAvatar
+                  character={svgCharacter}
                   emotion={emotion}
                   hideBackgroundDecor={Boolean(stageBackgroundMedia)}
                   state={avatarState}
                   viseme={viseme}
+                  sinSignal={sinSignal}
                 />
               </div>
             )}

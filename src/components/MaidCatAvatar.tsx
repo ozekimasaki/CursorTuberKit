@@ -1,5 +1,6 @@
 import maidCatSvg from "../../maid_cat.svg?raw"
 import type { Emotion } from "../../shared/emotion"
+import type { SinExpressionSignal } from "../../shared/sinsExpression"
 import type { Viseme } from "../lib/visemes"
 
 export type AvatarState = "idle" | "thinking" | "speaking" | "error"
@@ -9,6 +10,8 @@ type MaidCatAvatarProps = {
   hideBackgroundDecor?: boolean
   state: AvatarState
   viseme?: Viseme
+  // Accepted for symmetry with CatlinV2Avatar; not yet consumed.
+  sinSignal?: SinExpressionSignal
 }
 
 export function MaidCatAvatar({ state, viseme, emotion = "neutral", hideBackgroundDecor = false }: MaidCatAvatarProps) {

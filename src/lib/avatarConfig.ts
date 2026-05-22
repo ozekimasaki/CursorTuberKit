@@ -32,6 +32,15 @@ export const defaultMotionPngAssetStatus: MotionPngAssetStatus = {
   tone: null,
 }
 
+export type SvgCharacterId = "maid_cat" | "catlin_v2"
+
+export const svgCharacterChoices: { id: SvgCharacterId; label: string }[] = [
+  { id: "maid_cat", label: "メイド猫（標準）" },
+  { id: "catlin_v2", label: "キャットリン v2" },
+]
+
+export const defaultSvgCharacter: SvgCharacterId = "maid_cat"
+
 export type SvgAvatarSettings = {
   offsetX: number
   offsetY: number

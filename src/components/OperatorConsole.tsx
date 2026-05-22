@@ -9,14 +9,16 @@ import type {
 import type { AutomationPolicy } from "../../shared/automation"
 import type { ModerationAssessment } from "../../shared/moderation"
 import { type RuntimeTone, type StreamRuntimeActivity, type StreamStatus } from "../lib/runtimeProgress"
-import type { AvatarMode, MotionPngAssetStatus, MotionPngSettings } from "../lib/avatarConfig"
+import type { AvatarMode, MotionPngAssetStatus, MotionPngSettings, SvgCharacterId } from "../lib/avatarConfig"
 import type { CharacterContentSurface } from "../lib/contentSurface"
 import type { Emotion } from "../../shared/emotion"
+import type { SinExpressionSignal } from "../../shared/sinsExpression"
 import type { ConversationTurn } from "../lib/streamAi"
 import type { Viseme } from "../lib/visemes"
 import { ContentSurfacePanel } from "./ContentSurfacePanel"
 import { ViewerEventFeed } from "./ViewerEventFeed"
-import { MaidCatAvatar, type AvatarState } from "./MaidCatAvatar"
+import { type AvatarState } from "./MaidCatAvatar"
+import { SvgAvatar } from "./SvgAvatar"
 import { MotionPngAvatar, type MotionPngAvatarHandle } from "./MotionPngAvatar"
 
 type OperatorConsoleProps = {
@@ -42,6 +44,8 @@ type OperatorConsoleProps = {
   motionPngFiles: File[]
   motionPngSettings: MotionPngSettings
   motionPngAvatarRef: ForwardedRef<MotionPngAvatarHandle>
+  svgCharacter: SvgCharacterId
+  sinSignal?: SinExpressionSignal
   onMotionPngAssetStatusChange: (status: MotionPngAssetStatus) => void
 
   // Speaking
@@ -93,6 +97,8 @@ export function OperatorConsole(props: OperatorConsoleProps) {
     motionPngFiles,
     motionPngSettings,
     motionPngAvatarRef,
+    svgCharacter,
+    sinSignal,
     onMotionPngAssetStatusChange,
     responseText,
     recentTurns,
@@ -225,7 +231,7 @@ export function OperatorConsole(props: OperatorConsoleProps) {
               state={avatarState}
             />
           ) : (
-            <MaidCatAvatar emotion={emotion} state={avatarState} viseme={viseme} />
+            <SvgAvatar character={svgCharacter} emotion={emotion} state={avatarState} viseme={viseme} sinSignal={sinSignal} />
           )}
         </div>
         {isBusy && (

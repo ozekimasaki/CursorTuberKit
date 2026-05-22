@@ -123,7 +123,7 @@ function buildToneSurface(
     return {
       detail: providerMetadata?.supportsProviderEmotion
         ? "Cursor の final emotion と stop hook 経路でトーンを確定できます。"
-        : "Gemini では本文からトーンを推定しながら使います。",
+        : "final emotion 到着前は本文から暫定トーンを表示します。",
       label: providerMetadata?.supportsProviderEmotion ? "最終トーン待ち" : "本文ベースのトーン",
       tone: providerMetadata?.supportsProviderEmotion ? "warn" : "muted",
     }

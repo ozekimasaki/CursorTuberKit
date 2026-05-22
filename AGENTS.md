@@ -5,8 +5,8 @@ On Windows, `AGENTS.md` and `AGENTS.MD` cannot coexist as separate files, so kee
 
 ## Repository guidance
 
-- **Runtime is Cursor-only.** Do not reintroduce Gemini into runtime selection, configuration docs, provider branching, or environment examples unless explicitly requested.
-- **This is a general avatar app now.** Do not present the product as Catlin-only. Treat the bundled `maid_cat.svg` as a sample avatar, and keep docs / UX ready for swap-in custom avatars and MotionPNGTuber assets.
+- **Runtime is Cursor-only.** Do not add alternative runtime providers back into runtime selection, configuration docs, provider branching, or environment examples unless explicitly requested.
+- **This is a general avatar app now.** Do not present the product as Catlin-only. Treat `maid_cat.svg` and `catlin_v2.svg` as sample SVG avatars, and keep docs / UX ready for swap-in custom avatars and MotionPNGTuber assets.
 - **Keep playback serialized.** Background reply generation may run in parallel, but spoken audio playback must remain ordered and non-overlapping.
 - **Optimize for continuity.** Prefer prefetching and background generation during current speech so `次ネタ待ち` gaps stay short.
 - **Do not reintroduce manual approval flow.** The current product direction is full-auto in-app execution with block-only safety stops.
@@ -24,11 +24,14 @@ On Windows, `AGENTS.md` and `AGENTS.MD` cannot coexist as separate files, so kee
 
 - `src/App.tsx` is the main orchestration file for viewer comment intake, queueing, reply generation, autoplay, subtitle state, avatar switching, background replacement, and automatic content.
 - `src/lib/audioPlayback.ts` drives playback analysis used by both the SVG viseme path and MotionPNGTuber lip sync.
-- `src/components/MaidCatAvatar.tsx` is the SVG avatar wrapper. `maid_cat.svg` is sample content, not the product boundary.
+- `src/components/SvgAvatar.tsx` routes selectable SVG characters. `MaidCatAvatar.tsx` wraps `maid_cat.svg`; `CatlinV2Avatar.tsx` wraps `catlin_v2.svg`.
+- `src/components/CatlinV2Avatar.tsx` uses GSAP for SVG animation, custom mouth drawing, and subtle expression modulation from runtime character-state signals.
+- `shared/sinsExpression.ts` maps seven-deadly-sins character state into bounded visual modifiers. Keep these effects subtle and avoid exposing raw sin labels in the UI.
 - `src/components/MotionPngAvatar.tsx` and `src/lib/motionPngEngine.ts` are the MotionPNGTuber integration points.
 - Stage background replacement is shared across avatar modes; avoid changes that make it MotionPNGTuber-only.
 - Viewer reply generation may use limited parallelism in the background, but prepared reply playback must stay ordered and non-overlapping.
 - Comment compaction is intentionally relaxed compared with earlier versions: keep short comments more often before batch selection.
+- `tools/inspect-catlin.mjs`, `tools/classify-catlin.mjs`, and `tools/annotate-catlin.mjs` are one-off SVG inspection helpers. Keep generated `tools/out/` artifacts out of git.
 
 ## Validation
 

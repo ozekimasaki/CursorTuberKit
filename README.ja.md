@@ -14,12 +14,14 @@ CursorTuberKit は、**Cursor ベース**の配信アバター運用向けキッ
 
 - Cursor 専用 runtime
 - SVG / MotionPNGTuber の切り替え
+- SVG キャラクターとして `maid_cat` / `catlin_v2` を選択
 - VOICEVOX 音声合成
 - 発話に同期する口パク
 - YouTube / Twitch / Kick のコメント連携
 - 直列再生を崩さない自動返答キュー
 - 画像 / 動画の背景差し替え
 - 差し替え前提のアバター運用
+- 複雑な SVG パスを調査・注釈する補助ツール
 
 ## 想定ユースケース
 
@@ -56,6 +58,14 @@ npm run voicevox:status
 npm run voicevox:stop
 ```
 
+## SVG アバター
+
+- 標準では同梱の `maid_cat.svg` サンプルを使います。
+- `Settings > Avatar > SVGキャラクター` から `キャットリン v2` (`catlin_v2.svg`) へ切り替えられます。
+- `catlin_v2` は `gsap` によるアイドル / 口パク / 表情アニメーションと、七つの大罪スコア由来の瞬き・揺れ・赤面・目線・瞳・口元・顎上げの微調整を使います。
+- 新しい SVG キャラクターを増やす場合は `src/lib/avatarConfig.ts`、`src/components/SvgAvatar.tsx`、Settings の SVG キャラクター選択に追加してください。
+- `tools/inspect-catlin.mjs`、`tools/classify-catlin.mjs`、`tools/annotate-catlin.mjs` は `catlin_v2.svg` のパス解析・注釈用の補助ツールです。生成される `tools/out/` はローカル確認用で gitignore されています。
+
 ## MotionPNGTuber
 
 - `Settings > Avatar > MotionPNGTuber` で切り替え
@@ -86,6 +96,7 @@ npm run voicevox:stop
 ## カスタマイズ
 
 - デフォルトの SVG アセットを差し替えて独自アバターにする
+- SVG キャラクター選択に新しいアバターを追加する
 - MotionPNGTuber アセットで動画ベース表示へ移行する
 - 背景、クロマキー、位置、拡大率をアバターに合わせて調整する
 - `.cursor/rules/cursortuber-character.mdc` に、短い人格プロンプト・詳細人格プロンプト・補助人格ルールをまとめて置く。アプリはこの専用ファイルを明示的に runtime prompt へ合成します。`alwaysApply: false` のため、通常の coding agent 作業へ広く注入しない前提です。

@@ -9,13 +9,13 @@ CursorTuberKit is a browser-first streaming avatar kit for **Cursor-powered** VT
 ## Features
 
 - Cursor-only runtime integration via `@cursor/sdk`
-- SVG avatar mode with emotion + viseme-driven animation
+- SVG avatar mode with selectable `maid_cat` / `catlin_v2` characters, emotion, viseme, and state-driven animation
 - MotionPNGTuber mode with folder-picker asset loading
 - VOICEVOX speech synthesis with playback-driven lip sync
 - YouTube / Twitch / Kick live comment intake
 - Autoplay queueing with serialized spoken playback
 - Custom stage background replacement with image or looping video
-- Bring-your-own avatar workflow built around swap-ready assets
+- Bring-your-own avatar workflow built around swap-ready assets and inspection tooling
 
 ## Who this is for
 
@@ -88,9 +88,11 @@ npm run voicevox:stop
 
 ### SVG mode
 
-- Uses the bundled `maid_cat.svg` sample avatar
+- Uses the bundled `maid_cat.svg` sample avatar by default
+- Can switch to `catlin_v2.svg` from **Settings > Avatar > SVG character**
 - Supports `idle / thinking / speaking / error`
 - Uses the existing viseme path driven by playback analysis
+- `catlin_v2` uses `gsap` animation and seven-deadly-sins expression modifiers for subtle blink, sway, blush, eye, pupil, smile, and chin changes
 
 ### MotionPNGTuber mode
 
@@ -127,6 +129,8 @@ The custom background renders behind both avatar modes. When SVG mode is active,
 ## Customizing the app
 
 - Swap the default SVG asset path if you want a different inline avatar baseline
+- Add new SVG characters through `src/lib/avatarConfig.ts`, `src/components/SvgAvatar.tsx`, and the Settings SVG character selector
+- Use `tools/inspect-catlin.mjs`, `tools/classify-catlin.mjs`, and `tools/annotate-catlin.mjs` as one-off helpers for inspecting and annotating complex SVG path groups; generated `tools/out/` images are local artifacts
 - Use MotionPNGTuber assets when you want video-based rendering instead of SVG
 - Tune background media, chroma key, scale, and position per avatar setup
 - Adjust the surrounding prompts and orchestration to fit your own character or channel identity
@@ -146,6 +150,9 @@ The custom background renders behind both avatar modes. When SVG mode is active,
 
 - `src/App.tsx` orchestrates viewer comment intake, queueing, reply generation, autoplay, subtitle state, avatar switching, and automatic content
 - `src/lib/audioPlayback.ts` drives both SVG visemes and MotionPNGTuber audio analysis
+- `src/components/SvgAvatar.tsx` selects between `MaidCatAvatar` and `CatlinV2Avatar`
+- `src/components/CatlinV2Avatar.tsx` wraps `catlin_v2.svg`, GSAP animation, custom mouth drawing, and sin-expression visual modulation
+- `shared/sinsExpression.ts` converts runtime seven-deadly-sins values into bounded visual modifiers for SVG avatars
 - `src/components/MotionPngAvatar.tsx` and `src/lib/motionPngEngine.ts` wrap the MotionPNGTuber runtime
 - `server/index.ts` exposes the Cursor + VOICEVOX-backed API endpoints
 

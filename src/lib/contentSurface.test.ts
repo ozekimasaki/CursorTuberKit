@@ -27,6 +27,8 @@ describe('deriveCharacterContentSurface', () => {
       'teaser',
       'chapter-break',
     ])
+    expect(surface.tone.label).toBe('本文ベースのトーン')
+    expect(surface.tone.detail).toBe('final emotion 到着前は本文から暫定トーンを表示します。')
   })
 
   it('derives expected suggestion copy for each surface item', () => {

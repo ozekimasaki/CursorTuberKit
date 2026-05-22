@@ -18,7 +18,7 @@ import type { CharacterRuleStatus } from "../../shared/characterRules"
 import { characterProfile, characterProfileHighlights } from "../../shared/characterProfile"
 import { characterSinNames, type CharacterSinName, type CharacterSinValues } from "../../shared/characterState"
 import type { ModerationAssessment } from "../../shared/moderation"
-import type { AvatarMode, MotionPngAssetStatus, MotionPngSettings, SvgAvatarSettings } from "../lib/avatarConfig"
+import { svgCharacterChoices, type AvatarMode, type MotionPngAssetStatus, type MotionPngSettings, type SvgAvatarSettings, type SvgCharacterId } from "../lib/avatarConfig"
 import { type VoicevoxHealth } from "../lib/voicevox"
 import type { StageDisplayPreferences } from "../lib/stagePreferences"
 import {
@@ -47,6 +47,8 @@ type SettingsModalProps = {
   motionPngSettings: MotionPngSettings
   svgAvatarSettings: SvgAvatarSettings
   onSvgAvatarSettingChange: (patch: Partial<SvgAvatarSettings>) => void
+  svgCharacter: SvgCharacterId
+  onSvgCharacterChange: (character: SvgCharacterId) => void
   stagePreview?: ReactNode
   stageDisplayPrefs: StageDisplayPreferences
   onStageDisplayPrefsChange: (patch: Partial<StageDisplayPreferences>) => void
@@ -98,6 +100,8 @@ export function SettingsModal(props: SettingsModalProps) {
     motionPngSettings,
     svgAvatarSettings,
     onSvgAvatarSettingChange,
+    svgCharacter,
+    onSvgCharacterChange,
     stagePreview,
     stageDisplayPrefs,
     onStageDisplayPrefsChange,
@@ -507,6 +511,20 @@ export function SettingsModal(props: SettingsModalProps) {
               </label>
               {avatarMode === "svg" && (
                 <>
+                  <label className="field">
+                    <span className="card__key">SVGキャラクター</span>
+                    <select
+                      className="field__input"
+                      value={svgCharacter}
+                      onChange={(e) => onSvgCharacterChange(e.target.value as SvgCharacterId)}
+                    >
+                      {svgCharacterChoices.map((choice) => (
+                        <option key={choice.id} value={choice.id}>
+                          {choice.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                   <div className="settings-preview">
                     <div className="settings-preview__label">ステージプレビュー（実寸スケール）</div>
                     <div className="settings-preview__frame">

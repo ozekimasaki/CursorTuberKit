@@ -41,6 +41,7 @@ import {
   type MotionPngAudioAnalysis,
   type MotionPngSettings,
   type SvgAvatarSettings,
+  type SvgCharacterId,
 } from "./lib/avatarConfig"
 import { deriveCharacterContentSurface } from "./lib/contentSurface"
 import { inferEmotionFromText } from "./lib/emotion"
@@ -116,16 +117,19 @@ import {
   pickWeightedSuggestion,
   type SuggestionContext,
 } from "../shared/sinsBias"
+import { computeSinExpressionSignal } from "../shared/sinsExpression"
 import {
   defaultStageDisplayPreferences,
   loadAvatarMode,
   loadMotionPngSettings,
   loadStageDisplayPreferences,
   loadSvgAvatarSettings,
+  loadSvgCharacter,
   saveAvatarMode,
   saveMotionPngSettings,
   saveStageDisplayPreferences,
   saveSvgAvatarSettings,
+  saveSvgCharacter,
   stagePreferenceStorageKeys,
   type StageDisplayPreferences,
 } from "./lib/stagePreferences"
@@ -176,6 +180,7 @@ export function App() {
   const [motionPngFolderLabel, setMotionPngFolderLabel] = useState<string | null>(null)
   const [motionPngSettings, setMotionPngSettings] = useState<MotionPngSettings>(() => loadMotionPngSettings())
   const [svgAvatarSettings, setSvgAvatarSettings] = useState<SvgAvatarSettings>(() => loadSvgAvatarSettings())
+  const [svgCharacter, setSvgCharacter] = useState<SvgCharacterId>(() => loadSvgCharacter())
   const [stageDisplayPrefs, setStageDisplayPrefs] = useState<StageDisplayPreferences>(() =>
     loadStageDisplayPreferences(),
   )
@@ -369,6 +374,10 @@ export function App() {
   }, [svgAvatarSettings])
 
   useEffect(() => {
+    saveSvgCharacter(svgCharacter)
+  }, [svgCharacter])
+
+  useEffect(() => {
     saveStageDisplayPreferences(stageDisplayPrefs)
   }, [stageDisplayPrefs])
 
@@ -381,6 +390,8 @@ export function App() {
         setMotionPngSettings(loadMotionPngSettings())
       } else if (event.key === stagePreferenceStorageKeys.svgSettings) {
         setSvgAvatarSettings(loadSvgAvatarSettings())
+      } else if (event.key === stagePreferenceStorageKeys.svgCharacter) {
+        setSvgCharacter(loadSvgCharacter())
       } else if (event.key === stagePreferenceStorageKeys.avatarMode) {
         const mode = loadAvatarMode()
         if (mode) setAvatarMode(mode)
@@ -1952,6 +1963,11 @@ export function App() {
   const viewMode =
     typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("view") : null
 
+  const sinSignal = useMemo(
+    () => computeSinExpressionSignal(runtimeCharacterSins),
+    [runtimeCharacterSins],
+  )
+
   const renderStageView = (variant: "obs" | "preview") => (
     <StageView
       avatarMode={avatarMode}
@@ -1965,6 +1981,8 @@ export function App() {
       motionPngFiles={motionPngFiles}
       motionPngSettings={motionPngSettings}
       svgAvatarSettings={svgAvatarSettings}
+      svgCharacter={svgCharacter}
+      sinSignal={sinSignal}
       onMotionPngAssetStatusChange={variant === "obs" ? setMotionPngAssetStatus : undefined}
       stageBackgroundMedia={stageBackgroundMedia}
       viseme={viseme}
@@ -2014,6 +2032,8 @@ export function App() {
         motionPngFiles={motionPngFiles}
         motionPngSettings={motionPngSettings}
         motionPngAvatarRef={motionPngAvatarRef}
+        svgCharacter={svgCharacter}
+        sinSignal={sinSignal}
         onMotionPngAssetStatusChange={setMotionPngAssetStatus}
         responseText={responseText}
         recentTurns={recentTurns}
@@ -2055,6 +2075,8 @@ export function App() {
         motionPngSettings={motionPngSettings}
         svgAvatarSettings={svgAvatarSettings}
         onSvgAvatarSettingChange={updateSvgAvatarSettings}
+        svgCharacter={svgCharacter}
+        onSvgCharacterChange={setSvgCharacter}
         stagePreview={renderStageView("preview")}
         stageDisplayPrefs={stageDisplayPrefs}
         onStageDisplayPrefsChange={updateStageDisplayPrefs}

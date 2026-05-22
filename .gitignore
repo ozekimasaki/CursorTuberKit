@@ -11,3 +11,6 @@ memory/
 .cursor/runtime/
 .cursor/tmp-max-response.json
 .cursor-tmp-*.json
+
+# Local SVG inspection artifacts
+tools/out/

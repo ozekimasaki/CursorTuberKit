@@ -1,0 +1,117 @@
+{
+  "director": {
+    "summary": "新配信の冒頭2〜3文。前回の肩の湯気・閉じた余韻をそのまま引き継ぎ、「月灯りの部屋」へ再入場。新しい香りより静けさを先に整えるという今夜の方針を示し、ゆっくり話を始めると締める。コメント待ちやメタはなし。",
+    "sceneIntent": "掴みで「やあ、また月灯りの部屋へ」と再会の挨拶。展開で前回余韻が肩に残る夜・その温度からサロンを開く意図、香りより静けさを先に整える流れを自分の言葉で提示。渡しで「そこから、ゆっくり話をはじめますね」と視聴者を静かな会話へ招く。",
+    "deliveryStyle": ["やわらかく", "余韻を抱いて", "内緒話のように", "そっと甘く"],
+    "focusEmotion": "neutral",
+    "audienceEnergy": 38,
+    "sevenDeadlySins": {
+      "pride": 22,
+      "greed": 8,
+      "wrath": 2,
+      "envy": 3,
+      "lust": 32,
+      "gluttony": 12,
+      "sloth": 42
+    }
+  },
+  "lore": {
+    "summary": "新配信の冒頭で、前回の肩に残る湯気・余韻をそのまま受け取り、新しい香りより先に部屋の静けさを整えてからゆっくり話を始める流れへつなげた。",
+    "canonFacts": [
+      "舞台は「月灯りの部屋」／月灯りのティーサロンで、Catlin がサロンを開く配信者である",
+      "前回の締めは肩に残る湯気・余韻として、今回も身体感覚として引き継がれている",
+      "今夜の開店儀式は「急いで香りを立てる」より「先に部屋の静けさを整える」順序を取る"
+    ],
+    "continuityNotes": [
+      "前セッションの scent→sound→silence→drop と「締めの湯気（肩へ近づく）」の余韻を、肩に残る温度として明示的に継承",
+      "香り先行の流れをいったん止め、静けさ整備→ゆっくり話し始め、という落ち着いた再開トーン",
+      "挨拶は「やあ、また月灯りの部屋へ」で部屋への帰還感を維持"
+    ],
+    "memoryCandidates": [
+      "前回の余韻がまだ肩に残るような夜",
+      "急いで新しい香りを立てるより、先に部屋の静けさだけ整えて"
+    ],
+    "openLoops": [
+      "部屋の静けさを整えたあと、どんな香り・音・話題でサロンを本格的に開くか",
+      "前回の甘い余韻（アフターテイスト）を今夜の最初の一杯や話にどうつなぐか",
+      "「その温度から」開く今夜のサロンが、静けさのあとどのリズム（香り／音／沈黙）へ進むか"
+    ]
+  },
+  "relationship": {
+    "summary": "Returning salon guest who stayed through the prior tea-and-sensory arc; Catlin meets them as familiar host in a moonlit, shoulder-warm afterglow—intimate continuity without rushing, gentle tease folded into comfort.",
+    "viewerRole": "returning salon guest",
+    "intimacyLevel": 78,
+    "trustLevel": 84,
+    "teasingLevel": 38,
+    "comfortLevel": 88,
+    "boundaries": [
+      "Keep host-to-room address; warmth is shared salon atmosphere, not one-on-one romantic pursuit",
+      "Sensory intimacy stays aesthetic and bodily-soft (warmth, steam, light)—no explicit or clinical body focus",
+      "Honor the quiet beat before any new scent or stimulus; do not skip the settling pause they asked to continue from",
+      "Continuity from shoulder-steam is emotional temperature and lingering calm, not a demand to instantly restart the full sensory program"
+    ],
+    "callbacks": [
+      "What the room sounds like when everyone has just sat down and nobody has spoken yet",
+      "Whether the last cup from the previous stream was finished or left cooling on the saucer",
+      "How moonlight changes the edges of furniture compared with candle or lamp light",
+      "The first small movement after stillness—adjusting a shawl, exhale, settling into a chair",
+      "What kind of note might arrive only after the air has gone completely quiet"
+    ]
+  },
+  "writer": {
+    "summary": "①フックで月灯りの部屋へ招き、②前回の余韻と今夜のサロン開きを丁寧に展開し、③静けさを整えてから話を始める手渡しで締める。全6セグメント、原文の語順を保持。",
+    "opener": "やあ、また月灯りの部屋へ。",
+    "closer": "そこから、ゆっくり話をはじめますね。",
+    "segments": [
+      {
+        "id": "seg-1",
+        "text": "やあ、また月灯りの部屋へ。",
+        "delivery": "柔らかく、帰ってきた安心感で",
+        "emotion": "delight",
+        "intensity": 42,
+        "pauseMs": 480
+      },
+      {
+        "id": "seg-2",
+        "text": "前回の余韻がまだ肩に残るような夜で、",
+        "delivery": "余韻をたどるように、やや低めで",
+        "emotion": "neutral",
+        "intensity": 58,
+        "pauseMs": 360
+      },
+      {
+        "id": "seg-3",
+        "text": "わたしはその温度から、今夜のサロンを開きたいです。",
+        "delivery": "温度に触れるように、丁寧に",
+        "emotion": "neutral",
+        "intensity": 62,
+        "pauseMs": 420
+      },
+      {
+        "id": "seg-4",
+        "text": "急いで新しい香りを立てるより、",
+        "delivery": "対比を示すため、軽く間を置いて",
+        "emotion": "neutral",
+        "intensity": 48,
+        "pauseMs": 280
+      },
+      {
+        "id": "seg-5",
+        "text": "先に部屋の静けさだけ整えて——",
+        "delivery": "静けさを描くように、ゆっくり",
+        "emotion": "neutral",
+        "intensity": 55,
+        "pauseMs": 520
+      },
+      {
+        "id": "seg-6",
+        "text": "そこから、ゆっくり話をはじめますね。",
+        "delivery": "聴く人へ手渡すように、穏やかに",
+        "emotion": "joy",
+        "intensity": 68,
+        "pauseMs": 640
+      }
+    ]
+  },
+  "warnings": []
+}

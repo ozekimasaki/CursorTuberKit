@@ -1,9 +1,10 @@
-import { defaultMotionPngSettings, defaultSvgAvatarSettings, type AvatarMode, type MotionPngSettings, type SvgAvatarSettings } from "./avatarConfig"
+import { defaultMotionPngSettings, defaultSvgAvatarSettings, defaultSvgCharacter, type AvatarMode, type MotionPngSettings, type SvgAvatarSettings, type SvgCharacterId } from "./avatarConfig"
 
 const STAGE_DISPLAY_KEY = "ctk.stage.display"
 const MOTIONPNG_SETTINGS_KEY = "ctk.motionpng.settings"
 const SVG_SETTINGS_KEY = "ctk.svg.settings"
 const AVATAR_MODE_KEY = "ctk.avatar.mode"
+const SVG_CHARACTER_KEY = "ctk.svg.character"
 
 export type StageDisplayPreferences = {
   showCaption: boolean
@@ -119,9 +120,32 @@ export function saveAvatarMode(mode: AvatarMode): void {
   }
 }
 
+export function loadSvgCharacter(): SvgCharacterId {
+  const ls = safeLocalStorage()
+  if (!ls) return defaultSvgCharacter
+  try {
+    const raw = ls.getItem(SVG_CHARACTER_KEY)
+    if (raw === "maid_cat" || raw === "catlin_v2") return raw
+    return defaultSvgCharacter
+  } catch {
+    return defaultSvgCharacter
+  }
+}
+
+export function saveSvgCharacter(character: SvgCharacterId): void {
+  const ls = safeLocalStorage()
+  if (!ls) return
+  try {
+    ls.setItem(SVG_CHARACTER_KEY, character)
+  } catch {
+    /* ignore */
+  }
+}
+
 export const stagePreferenceStorageKeys = {
   stageDisplay: STAGE_DISPLAY_KEY,
   motionPngSettings: MOTIONPNG_SETTINGS_KEY,
   svgSettings: SVG_SETTINGS_KEY,
   avatarMode: AVATAR_MODE_KEY,
+  svgCharacter: SVG_CHARACTER_KEY,
 } as const
