@@ -216,6 +216,7 @@ export function App() {
     handleCharacterPresetCreate,
     handleCharacterPresetDelete,
     handleCharacterPresetUpdate,
+    handleCharacterStateReset,
     handleChatSettingsSave,
     setChatSettings,
   } = useChatSettingsManager({ showError, syncRuntimeStatus })
@@ -2097,6 +2098,7 @@ export function App() {
         onCharacterPresetCreate={handleCharacterPresetCreate}
         onCharacterPresetDelete={handleCharacterPresetDelete}
         onCharacterPresetUpdate={handleCharacterPresetUpdate}
+        onCharacterStateReset={handleCharacterStateReset}
         onChatMemoryClear={handleChatMemoryClear}
         onChatSettingsSave={handleChatSettingsSave}
         onPersonaAutoRewriteRequest={handlePersonaAutoRewriteRequest}

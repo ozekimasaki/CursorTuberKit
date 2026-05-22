@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react"
 
 import type { CharacterPreset, CharacterPresetInput } from "../../shared/characterPresets"
 import { createDefaultChatSettings, type ChatSettings } from "../../shared/chatSettings"
+import { normalizeCharacterSinValues } from "../../shared/characterState"
 import {
   clearChatMemory,
   createCharacterPreset,
@@ -183,6 +184,29 @@ export function useChatSettingsManager({ showError, syncRuntimeStatus }: UseChat
     }
   }, [showError])
 
+  const handleCharacterStateReset = useCallback(async () => {
+    setChatSettingsAction("saving")
+    setChatSettingsNotice(null)
+    setCharacterPresetNotice(null)
+
+    try {
+      const saved = await updateChatSettings({
+        characterState: {
+          sins: normalizeCharacterSinValues(),
+        },
+      })
+      setChatSettings(saved)
+      setChatSettingsNotice("Current Hidden State を全軸 50 にリセットしました。")
+      void syncRuntimeStatus()
+    } catch (error) {
+      if (!isAbortError(error)) {
+        showError(error instanceof Error ? error.message : "Current Hidden State のリセットに失敗しました。")
+      }
+    } finally {
+      setChatSettingsAction("idle")
+    }
+  }, [showError, syncRuntimeStatus])
+
   return {
     characterPresetBusy,
     characterPresetNotice,
@@ -190,6 +214,7 @@ export function useChatSettingsManager({ showError, syncRuntimeStatus }: UseChat
     chatSettings,
     chatSettingsAction,
     chatSettingsNotice,
+    handleCharacterStateReset,
     handleChatMemoryClear,
     handleCharacterPresetCreate,
     handleCharacterPresetDelete,

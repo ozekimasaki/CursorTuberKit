@@ -72,6 +72,7 @@ type SettingsModalProps = {
     presetId: string,
     preset: CharacterPresetInput,
   ) => CharacterPreset | Promise<CharacterPreset | null> | null
+  onCharacterStateReset: () => void | Promise<void>
   onChatMemoryClear: () => void | Promise<void>
   onChatSettingsSave: (settings: ChatSettings) => void | Promise<void>
   onPersonaAutoRewriteRequest: () => void | Promise<void>
@@ -122,6 +123,7 @@ export function SettingsModal(props: SettingsModalProps) {
     onCharacterPresetCreate,
     onCharacterPresetDelete,
     onCharacterPresetUpdate,
+    onCharacterStateReset,
     onChatMemoryClear,
     onChatSettingsSave,
     onPersonaAutoRewriteRequest,
@@ -229,6 +231,11 @@ export function SettingsModal(props: SettingsModalProps) {
   async function handleMemoryClear() {
     if (!window.confirm("長期記憶をクリアしますか？ 継続文脈がリセットされます。")) return
     await onChatMemoryClear()
+  }
+
+  async function handleCharacterStateReset() {
+    if (!window.confirm("Current Hidden State を全軸 50 にリセットしますか？")) return
+    await onCharacterStateReset()
   }
 
   function handleBackgroundClear() {
@@ -345,7 +352,7 @@ export function SettingsModal(props: SettingsModalProps) {
                   {chatSettingsBusy ? "保存中…" : "名前を保存"}
                 </button>
               </div>
-              {chatSettingsNotice && (
+              {chatSettingsNotice && !chatSettingsNotice.includes("Current Hidden State") && (
                 <div className="notice notice--ok">
                   <p className="notice__text">{chatSettingsNotice}</p>
                 </div>
@@ -476,7 +483,7 @@ export function SettingsModal(props: SettingsModalProps) {
                     現在プロンプトに反映されている内部値です。初期値は全軸 50 です。
                   </p>
                 </div>
-                <span className="info-chip info-chip--muted">Read only</span>
+                <span className="info-chip info-chip--muted">Auto managed</span>
               </div>
               {characterSinNames.map((sinName) => (
                 <div key={sinName} className="card__row">
@@ -484,6 +491,21 @@ export function SettingsModal(props: SettingsModalProps) {
                   <span className="card__val">{runtimeCharacterSins[sinName]}</span>
                 </div>
               ))}
+              <div className="composer__actions">
+                <button
+                  className="btn btn--secondary"
+                  type="button"
+                  onClick={() => void handleCharacterStateReset()}
+                  disabled={chatSettingsBusy || chatMemoryClearBusy}
+                >
+                  {chatSettingsBusy ? "リセット中…" : "全軸 50 にリセット"}
+                </button>
+              </div>
+              {chatSettingsNotice?.includes("Current Hidden State") && (
+                <div className="notice notice--ok">
+                  <p className="notice__text">{chatSettingsNotice}</p>
+                </div>
+              )}
             </div>
           </section>
 
