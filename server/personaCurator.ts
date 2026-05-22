@@ -8,7 +8,9 @@ import {
 import type { CharacterSinValues } from "../shared/characterState.js"
 import type { PersonaCuratorTurn } from "../shared/personaCurator.js"
 import type { MemKraftPromptContext } from "./aiCommon.js"
+import { validateCharacterRuleContent } from "./characterRuleSource.js"
 import { collectCursorRun } from "./cursorSdkRun.js"
+import { createCursorLocalOptions } from "./cursorLocalOptions.js"
 import { disposeAgentSafely, extractJsonObject, truncate, withTimeout } from "./cursorAgentUtils.js"
 
 const PERSONA_CURATOR_NAME = "persona-curator"
@@ -19,6 +21,7 @@ type RunPersonaCuratorOptions = {
   apiKey: string
   model: string
   currentSettings: ChatSettings
+  currentRuleContent: string
   recentTurns: PersonaCuratorTurn[]
   runtimeSins: CharacterSinValues
   memoryContext: MemKraftPromptContext
@@ -28,6 +31,7 @@ type RunPersonaCuratorOptions = {
 export type PersonaCuratorResult = {
   characterPrompt: string
   characterFullPrompt: string
+  ruleContent: string
   summary: string
 }
 
@@ -47,18 +51,21 @@ export async function runPersonaCurator(options: RunPersonaCuratorOptions): Prom
         model: selectedModel,
         prompt: [
           `あなたは ${characterProfile.name} の Persona Curator です。`,
-          "現行の人格プロンプト (characterPrompt: 短い設定 / characterFullPrompt: 詳しい指示) を、",
+          "現行の人格プロンプト (characterPrompt: 短い設定 / characterFullPrompt: 詳しい指示) とリポジトリ人格ルールを、",
           "直近の配信会話・キャラの内部状態 (sins)・長期記憶のコンテキストを踏まえて、",
           "本人らしさを保ったまま『より生きた表現』『会話で見えた癖の言語化』『最近よく出た話題への適応』『配信者としての魅力濃度』を反映して書き換えます。",
           "",
           "出力は JSON のみ。スキーマ:",
-          '{"characterPrompt":"","characterFullPrompt":"","summary":""}',
+          '{"characterPrompt":"","characterFullPrompt":"","ruleContent":"","summary":""}',
           "",
           "▼ 厳守ルール",
           "- 既存の核 (名前・基本パーソナリティ・口調・一人称・二人称・基本世界観) を壊さない。大改造ではなく漸進進化。",
           `- characterPrompt は ${maxCharacterPromptLength} 文字以内。短く凝縮された設定書き。`,
           `- characterFullPrompt は ${maxCharacterFullPromptLength} 文字以内。具体的な振る舞い指示。`,
           "- characterFullPrompt 内に元から含まれる {{characterName}} プレースホルダーは保持する。",
+          "- ruleContent は .cursor/rules/cursortuber-character.mdc の本文として保存される。frontmatter (---) は絶対に含めない。",
+          "- ruleContent は .cursor/rules に保存され git 差分に出る。配信文脈から得た人格進化は反映してよいが、秘密情報、API key、未公開の認証情報は絶対に含めない。",
+          "- ruleContent は {{characterName}} と {{characterPrompt}} プレースホルダーを使ってよいが、未閉じの波括弧や markdown frontmatter 区切りを含めない。",
           "- 視聴者コメントの量・有無・ROM専・コメント催促などのメタ表現は絶対に書き込まない。",
           "- AI/プロンプト/自走モード等のメタ表現も書き込まない。",
           "",
@@ -90,10 +97,12 @@ export async function runPersonaCurator(options: RunPersonaCuratorOptions): Prom
           "出力は JSON のみ:",
           '{"accepted":true,"reason":"","regenerateInstruction":""}',
           "accepted=false の場合は regenerateInstruction に修正方針を1〜2文 (どの要素を戻す/削るかを具体的に)。",
+          "リポジトリ人格ルールは git 差分に出ることを前提に、秘密情報、API key、frontmatter 区切りが入っていたら必ず accepted=false。",
         ].join("\n"),
       },
     },
     apiKey: options.apiKey,
+    local: createCursorLocalOptions(),
     model: selectedModel,
     name: `${characterProfile.agentName} Persona Curator`,
   })
@@ -148,7 +157,7 @@ function buildCuratorControllerPrompt(options: RunPersonaCuratorOptions): string
     "1) persona-curator に改訂版プロンプトを作らせる。",
     "2) persona-critic に判定させる。accepted=false の場合のみ、その regenerateInstruction を反映して persona-curator を 1 度だけ再実行する。",
     "3) 最終回答は以下スキーマの JSON のみ:",
-    '{"characterPrompt":"","characterFullPrompt":"","summary":""}',
+    '{"characterPrompt":"","characterFullPrompt":"","ruleContent":"","summary":""}',
     "",
     `キャラ名: ${currentSettings.characterName}`,
     containsNamePlaceholder
@@ -160,6 +169,9 @@ function buildCuratorControllerPrompt(options: RunPersonaCuratorOptions): string
     "",
     "現在の characterFullPrompt (詳しい指示):",
     currentSettings.characterFullPrompt || "(空)",
+    "",
+    "現在のリポジトリ人格ルール (.cursor/rules/cursortuber-character.mdc の本文。git 差分に出る):",
+    options.currentRuleContent || "(空)",
     "",
     "直近の自分の発話 (新しい順):",
     recentAssistant,
@@ -174,6 +186,7 @@ function buildCuratorControllerPrompt(options: RunPersonaCuratorOptions): string
     memoryBlock,
     "",
     "重要: 既存の核を壊さず、観察された癖や話題を 1〜2 個自然に取り込む形で漸進進化させる。",
+    "重要: リポジトリ人格ルールは git 差分に出る。配信文脈から得た人格進化は反映してよいが、秘密情報や API key は絶対に含めない。",
     "重要: 視聴者コメントの量へのメタ表現 / AI・プロンプト等のメタ表現は絶対に含めない。",
   ].join("\n")
 }
@@ -187,13 +200,14 @@ function parseCuratorOutput(raw: string): PersonaCuratorResult {
 
   const characterPrompt = typeof parsed.characterPrompt === "string" ? parsed.characterPrompt.trim() : ""
   const characterFullPrompt = typeof parsed.characterFullPrompt === "string" ? parsed.characterFullPrompt.trim() : ""
+  const ruleContent = typeof parsed.ruleContent === "string" ? parsed.ruleContent.trim() : ""
   const summary = typeof parsed.summary === "string" ? parsed.summary.trim() : ""
 
-  if (!characterPrompt || !characterFullPrompt) {
-    throw new PersonaCuratorError("Persona curator output missing characterPrompt or characterFullPrompt")
+  if (!characterPrompt || !characterFullPrompt || !ruleContent) {
+    throw new PersonaCuratorError("Persona curator output missing characterPrompt, characterFullPrompt, or ruleContent")
   }
 
-  return { characterPrompt, characterFullPrompt, summary: summary || "プロンプトを更新しました。" }
+  return { characterPrompt, characterFullPrompt, ruleContent, summary: summary || "プロンプトを更新しました。" }
 }
 
 function enforceLimits(result: PersonaCuratorResult, current: ChatSettings): PersonaCuratorResult {
@@ -213,5 +227,7 @@ function enforceLimits(result: PersonaCuratorResult, current: ChatSettings): Per
     }
   }
 
-  return { characterPrompt, characterFullPrompt, summary: result.summary }
+  const ruleContent = validateCharacterRuleContent(result.ruleContent)
+
+  return { characterPrompt, characterFullPrompt, ruleContent, summary: result.summary }
 }

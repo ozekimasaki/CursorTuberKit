@@ -14,6 +14,7 @@ import {
   renderCharacterFullPrompt,
   type ChatSettings,
 } from "../../shared/chatSettings"
+import type { CharacterRuleStatus } from "../../shared/characterRules"
 import { characterProfile, characterProfileHighlights } from "../../shared/characterProfile"
 import { characterSinNames, type CharacterSinName, type CharacterSinValues } from "../../shared/characterState"
 import type { ModerationAssessment } from "../../shared/moderation"
@@ -61,6 +62,7 @@ type SettingsModalProps = {
   characterPresets: CharacterPreset[]
   characterPresetBusy: boolean
   characterPresetNotice: string | null
+  characterRuleStatus: CharacterRuleStatus
   runtimeCharacterSins: CharacterSinValues
   onCharacterPresetCreate: (preset: CharacterPresetInput) => CharacterPreset | Promise<CharacterPreset | null> | null
   onCharacterPresetDelete: (presetId: string) => boolean | Promise<boolean>
@@ -111,6 +113,7 @@ export function SettingsModal(props: SettingsModalProps) {
     characterPresets,
     characterPresetBusy,
     characterPresetNotice,
+    characterRuleStatus,
     runtimeCharacterSins,
     onCharacterPresetCreate,
     onCharacterPresetDelete,
@@ -293,11 +296,13 @@ export function SettingsModal(props: SettingsModalProps) {
             <div className="card">
               <div className="card__header">
                 <div>
-                  <p className="card__title">Character Draft</p>
-                  <p className="card__hint card__hint--compact">名前と話し方をここで決めます。</p>
+                  <p className="card__title">キャラクター設定</p>
+                  <p className="card__hint card__hint--compact">
+                    名前はここで保存し、話し方は AI 自動更新とリポジトリ人格ルールで育てます。
+                  </p>
                 </div>
                 <span className={`info-chip info-chip--${isCharacterDraftDirty ? "warn" : "ok"}`}>
-                  {isCharacterDraftDirty ? "未保存" : "保存済み"}
+                  {isCharacterDraftDirty ? "名前 未保存" : "名前 反映済み"}
                 </span>
               </div>
               <label className="field">
@@ -312,11 +317,11 @@ export function SettingsModal(props: SettingsModalProps) {
                 />
               </label>
               <div className="field">
-                <span className="card__key">キャラ設定（短く）</span>
+                <span className="card__key">短い人格プロンプト</span>
                 <pre className="character-draft__preview" aria-readonly="true">{characterPromptDraft || "(未設定)"}</pre>
               </div>
               <div className="field">
-                <span className="card__key">詳しい指示</span>
+                <span className="card__key">詳細人格プロンプト</span>
                 <pre className="character-draft__preview" aria-readonly="true">{characterFullPromptDraft || "(未設定)"}</pre>
               </div>
               <details>
@@ -324,7 +329,7 @@ export function SettingsModal(props: SettingsModalProps) {
                 <pre className="character-draft__preview">{renderedCharacterFullPrompt}</pre>
               </details>
               <p className="card__hint card__hint--compact">
-                ※ プロンプト本文（キャラ設定・詳しい指示）は AI が直近の会話を踏まえて自動で書き換えます。手動編集は無効化されています。
+                ※ 短い人格プロンプトと詳細人格プロンプトの実体は .cursor/rules の専用ファイルにあります。AI が直近の会話を踏まえて自動で書き換え、この画面では読み取り専用で表示します。
               </p>
               <div className="composer__actions">
                 <button
@@ -348,7 +353,7 @@ export function SettingsModal(props: SettingsModalProps) {
                 <div>
                   <p className="card__title">AI 自動更新</p>
                   <p className="card__hint card__hint--compact">
-                    会話の流れを踏まえて AI がプロンプトを書き換えます。自走で定期実行されますが、ここから即時実行も可能です。
+                    会話の流れを踏まえて AI が人格プロンプトとリポジトリ人格ルールを書き換えます。自走で定期実行されますが、ここから即時実行も可能です。
                   </p>
                 </div>
                 <span className={`info-chip info-chip--${personaAutoRewriteBusy ? "warn" : "muted"}`}>
@@ -363,6 +368,30 @@ export function SettingsModal(props: SettingsModalProps) {
                     : "未実行"}
                 </span>
               </div>
+              <div className="card__row">
+                <span className="card__key">人格ルール</span>
+                <span className="card__val">
+                  {characterRuleStatus.error
+                    ? "読み込みエラー"
+                    : characterRuleStatus.loaded
+                      ? `${characterRuleStatus.path} · ${characterRuleStatus.contentLength} 文字`
+                      : "未作成"}
+                </span>
+              </div>
+              {characterRuleStatus.updatedAt && (
+                <div className="card__row">
+                  <span className="card__key">ルール更新</span>
+                  <span className="card__val">{new Date(characterRuleStatus.updatedAt).toLocaleString()}</span>
+                </div>
+              )}
+              <p className="card__hint card__hint--compact">
+                .cursor/rules の専用ファイルも自動更新されます。配信文脈を反映した内容が git diff に出るため、コミット前に確認してください。
+              </p>
+              {characterRuleStatus.error && (
+                <div className="notice notice--error">
+                  <p className="notice__text">{characterRuleStatus.error}</p>
+                </div>
+              )}
               <div className="composer__actions">
                 <button
                   className="btn btn--secondary"

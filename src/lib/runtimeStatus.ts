@@ -1,5 +1,6 @@
 import type { CharacterSinValues } from "../../shared/characterState"
 import type { ChatProvider } from "../../shared/chatStream"
+import { createEmptyCharacterRuleStatus, type CharacterRuleStatus } from "../../shared/characterRules"
 import type { FinalEmotionPayload } from "../../shared/emotion"
 
 export type ChatRunRecap = {
@@ -19,9 +20,24 @@ export type ChatRunRecap = {
 }
 
 export type RuntimeStatusSnapshot = {
+  characterRule?: CharacterRuleStatus
   characterStateCurrent?: CharacterSinValues | null
   chatRuns: {
     recent: ChatRunRecap[]
+  }
+}
+
+export function normalizeCharacterRuleStatus(value: RuntimeStatusSnapshot["characterRule"]): CharacterRuleStatus {
+  if (!value) {
+    return createEmptyCharacterRuleStatus()
+  }
+
+  return {
+    contentLength: typeof value.contentLength === "number" ? value.contentLength : 0,
+    error: typeof value.error === "string" ? value.error : null,
+    loaded: value.loaded === true,
+    path: typeof value.path === "string" ? value.path : createEmptyCharacterRuleStatus().path,
+    updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : null,
   }
 }
 

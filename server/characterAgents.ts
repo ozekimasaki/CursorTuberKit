@@ -10,6 +10,7 @@ import {
 import { characterProfile } from "../shared/characterProfile.js"
 import { emotionValues, inferEmotionFromText, type Emotion } from "../shared/emotion.js"
 import { collectCursorRun } from "./cursorSdkRun.js"
+import { createCursorLocalOptions } from "./cursorLocalOptions.js"
 import type { CursorRunTelemetryRecord } from "./cursorTypes.js"
 
 const CHARACTER_DIRECTOR_NAME = "character-director"
@@ -128,6 +129,7 @@ async function runCharacterArtifactAnalysis(
       },
     },
     apiKey: options.apiKey,
+    local: createCursorLocalOptions(),
     model: selectedModel,
     name: `${characterProfile.agentName} Character Pipeline`,
   })

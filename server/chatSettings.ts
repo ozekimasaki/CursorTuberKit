@@ -7,6 +7,7 @@ import {
   type ChatSettings,
   type ChatSettingsPatch,
 } from "../shared/chatSettings.js"
+import { readCharacterRuleSource } from "./characterRuleSource.js"
 
 const CHAT_SETTINGS_FILE = path.resolve(process.cwd(), "memory", "runtime", "chat-settings.json")
 
@@ -15,7 +16,7 @@ let settingsWriteQueue = Promise.resolve()
 
 export async function readChatSettings(): Promise<ChatSettings> {
   if (cachedSettings) {
-    return copyChatSettings(cachedSettings)
+    return applyCharacterRulePrompts(cachedSettings)
   }
 
   try {
@@ -26,7 +27,7 @@ export async function readChatSettings(): Promise<ChatSettings> {
     await writeChatSettingsFile(cachedSettings)
   }
 
-  return copyChatSettings(cachedSettings)
+  return applyCharacterRulePrompts(cachedSettings)
 }
 
 export async function updateChatSettings(patch: ChatSettingsPatch): Promise<ChatSettings> {
@@ -64,5 +65,16 @@ function copyChatSettings(settings: ChatSettings): ChatSettings {
       persistResponses: settings.memory.persistResponses,
     },
     schemaVersion: settings.schemaVersion,
+  }
+}
+
+async function applyCharacterRulePrompts(settings: ChatSettings): Promise<ChatSettings> {
+  const copied = copyChatSettings(settings)
+  const source = await readCharacterRuleSource()
+
+  return {
+    ...copied,
+    characterFullPrompt: source.characterFullPrompt ?? copied.characterFullPrompt,
+    characterPrompt: source.characterPrompt ?? copied.characterPrompt,
   }
 }

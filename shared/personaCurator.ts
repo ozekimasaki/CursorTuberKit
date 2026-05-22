@@ -1,5 +1,6 @@
 import type { ChatSettings } from "./chatSettings.js"
 import type { CharacterSinValues } from "./characterState.js"
+import type { CharacterRuleStatus } from "./characterRules.js"
 
 export type PersonaCuratorTurn = {
   role: "assistant" | "user"
@@ -12,6 +13,7 @@ export type PersonaAutoRewriteRequestBody = {
 }
 
 export type PersonaAutoRewriteResponse = {
+  characterRule: CharacterRuleStatus
   settings: ChatSettings
   summary: string
   updatedAt: string

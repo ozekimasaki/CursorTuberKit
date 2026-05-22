@@ -7,6 +7,7 @@ import {
 } from "../shared/automation"
 import type { ChatMetadataPayload, ChatSessionPayload } from "../shared/chatStream"
 import { createDefaultChatSettings, type ChatSettings } from "../shared/chatSettings"
+import { createEmptyCharacterRuleStatus, type CharacterRuleStatus } from "../shared/characterRules"
 import type { CharacterSinValues } from "../shared/characterState"
 import { characterProfile } from "../shared/characterProfile"
 import type { Emotion, FinalEmotionPayload } from "../shared/emotion"
@@ -60,7 +61,7 @@ import {
   shouldAutoPlayPreparedReply,
   type PreparedAutoReply,
 } from "./lib/preparedReplyQueue"
-import { fetchRuntimeStatus, isChatRunRecap, type ChatRunRecap } from "./lib/runtimeStatus"
+import { fetchRuntimeStatus, isChatRunRecap, normalizeCharacterRuleStatus, type ChatRunRecap } from "./lib/runtimeStatus"
 import type { Viseme } from "./lib/visemes"
 import { synthesizeVoice } from "./lib/voicevox"
 import { requestAutopilotTopic } from "./lib/autopilot"
@@ -153,6 +154,7 @@ export function App() {
   const [sessionMetadata, setSessionMetadata] = useState<ChatSessionPayload | null>(null)
   const [finalEmotionPayload, setFinalEmotionPayload] = useState<FinalEmotionPayload | null>(null)
   const [latestRunRecap, setLatestRunRecap] = useState<ChatRunRecap | null>(null)
+  const [characterRuleStatus, setCharacterRuleStatus] = useState<CharacterRuleStatus>(createEmptyCharacterRuleStatus)
   const [runtimeCharacterSins, setRuntimeCharacterSins] = useState<CharacterSinValues>(
     () => createDefaultChatSettings().characterState.sins,
   )
@@ -216,6 +218,7 @@ export function App() {
   async function syncRuntimeStatus(signal?: AbortSignal) {
     const snapshot = await fetchRuntimeStatus(signal)
     setLatestRunRecap(snapshot.chatRuns.recent[0] ?? null)
+    setCharacterRuleStatus(normalizeCharacterRuleStatus(snapshot.characterRule))
 
     if (snapshot.characterStateCurrent) {
       setRuntimeCharacterSins(snapshot.characterStateCurrent)
@@ -2067,6 +2070,7 @@ export function App() {
         characterPresets={characterPresets}
         characterPresetBusy={characterPresetBusy}
         characterPresetNotice={characterPresetNotice}
+        characterRuleStatus={characterRuleStatus}
         runtimeCharacterSins={runtimeCharacterSins}
         onCharacterPresetCreate={handleCharacterPresetCreate}
         onCharacterPresetDelete={handleCharacterPresetDelete}

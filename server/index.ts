@@ -12,6 +12,13 @@ import { buildAutomationEnvelope } from "./automationSafety.js"
 import { buildAvatarPromptBundle, createEmptyMemKraftPromptContext } from "./aiCommon.js"
 import { readAiProvider, resolveAiMetadata, streamAiResponse, validateAiConfiguration } from "./aiProvider.js"
 import { readChatSettings, updateChatSettings } from "./chatSettings.js"
+import {
+  composeCharacterRuleContent,
+  readCharacterRuleSource,
+  readCharacterRuleStatus,
+  writeCharacterRuleContent,
+  type CharacterRuleSource,
+} from "./characterRuleSource.js"
 import { persistCharacterArtifacts } from "./characterArtifacts.js"
 import {
   createCharacterPreset,
@@ -90,9 +97,11 @@ app.get("/api/health", (_request, response) => {
 
 app.get("/api/runtime/status", asyncRoute(async (_request, response) => {
   const settings = await readChatSettings()
+  const characterRule = await readCharacterRuleStatus()
   const characterStateCurrent = await readCharacterRuntimeSinValues(settings.characterState.sins)
   response.json({
     ...runtimeStatusTracker.getSnapshot(),
+    characterRule,
     characterStateCurrent,
   })
 }))
@@ -297,11 +306,13 @@ app.post("/api/chat/stream", async (request: Request<Record<string, never>, unkn
   let provider
   let routeBase
   let chatSettings
+  let characterRule: CharacterRuleSource
   let runtimeCharacterSins: CharacterArtifactsPayload["director"]["sevenDeadlySins"] | undefined
   let memKraftContext = createEmptyMemKraftPromptContext()
 
   try {
     chatSettings = await readChatSettings()
+    characterRule = await readCharacterRuleSource()
     runtimeCharacterSins = await readCharacterRuntimeSinValues(chatSettings.characterState.sins)
     provider = readAiProvider()
     routeBase = resolveAiMetadata(provider)
@@ -333,6 +344,7 @@ app.post("/api/chat/stream", async (request: Request<Record<string, never>, unkn
       characterFullPrompt: chatSettings.characterFullPrompt,
       characterName: chatSettings.characterName,
       characterPrompt: chatSettings.characterPrompt,
+      characterRuleContent: characterRule.content,
     },
     sinOverrides: runtimeCharacterSins,
   })
@@ -349,6 +361,7 @@ app.post("/api/chat/stream", async (request: Request<Record<string, never>, unkn
   })
   const promptBundle = buildAvatarPromptBundle(prompt, {
     characterContext,
+    characterRuleContent: characterRule.runtimeRuleContent,
     chatSettings,
     inputKind,
     memoryContext: memKraftContext,
@@ -739,8 +752,10 @@ app.post(
     }
 
     let chatSettings
+    let characterRule: CharacterRuleSource
     try {
       chatSettings = await readChatSettings()
+      characterRule = await readCharacterRuleSource()
     } catch (error) {
       response.status(500).json({ error: getErrorMessage(error) })
       return
@@ -771,18 +786,28 @@ app.post(
         apiKey,
         model: curatorModel,
         currentSettings: chatSettings,
+        currentRuleContent: characterRule.content,
         recentTurns: body.recentTurns,
         runtimeSins: normalizeCharacterSinValues(runtimeSins),
         memoryContext,
         signal: readRequestSignal(request),
       })
 
-      const saved = await updateChatSettings({
-        characterPrompt: result.characterPrompt,
-        characterFullPrompt: result.characterFullPrompt,
-      })
+      const previousRuleContent = characterRule.content
+      const nextRuleStatus = await writeCharacterRuleContent(composeCharacterRuleContent(result))
+      let saved
+      try {
+        saved = await updateChatSettings({
+          characterPrompt: result.characterPrompt,
+          characterFullPrompt: result.characterFullPrompt,
+        })
+      } catch (error) {
+        await writeCharacterRuleContent(previousRuleContent).catch(() => undefined)
+        throw error
+      }
 
       response.json({
+        characterRule: nextRuleStatus,
         settings: saved,
         summary: result.summary,
         updatedAt: new Date().toISOString(),
@@ -797,4 +822,3 @@ app.post(
 app.listen(port, () => {
   console.log(`${characterProfile.agentName} server listening on http://localhost:${port}`)
 })
-

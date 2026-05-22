@@ -130,7 +130,9 @@ The custom background renders behind both avatar modes. When SVG mode is active,
 - Use MotionPNGTuber assets when you want video-based rendering instead of SVG
 - Tune background media, chroma key, scale, and position per avatar setup
 - Adjust the surrounding prompts and orchestration to fit your own character or channel identity
-- Edit the character persona prompt, save persona presets, and tune long-term memory behavior from the in-app **Settings** panel
+- Use `.cursor/rules/cursortuber-character.mdc` for tracked character seed rules, including the short and full persona prompts. The app explicitly loads this file into runtime avatar prompts; `alwaysApply: false` keeps it from being broadly injected into coding-agent work.
+- Use the in-app **Settings** panel to change the character name, inspect AI-managed prompt previews, trigger persona auto-rewrite, save persona presets, and tune long-term memory behavior.
+- Persona auto-rewrite also updates `.cursor/rules/cursortuber-character.mdc`, so review git diffs before committing. Never commit secrets or credentials to this tracked rule file.
 
 ## Live Chat
 
@@ -168,7 +170,7 @@ Streams:
 
 ### `GET /api/runtime/status`
 
-Returns recent chat run recap, platform chat state, character artifact summaries, and latest VOICEVOX health.
+Returns recent chat run recap, platform chat state, character rule status, character artifact summaries, and latest VOICEVOX health.
 
 ### `GET /api/platform-chat/state`
 

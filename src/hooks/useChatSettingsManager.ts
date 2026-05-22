@@ -82,7 +82,7 @@ export function useChatSettingsManager({ showError, syncRuntimeStatus }: UseChat
           memory: nextSettings.memory,
         })
         setChatSettings(saved)
-        setChatSettingsNotice("キャラクター名・人格 prompt・長期記憶設定を保存しました。")
+        setChatSettingsNotice("キャラクター名・長期記憶設定を保存しました。")
         void syncRuntimeStatus()
       } catch (error) {
         if (!isAbortError(error)) {

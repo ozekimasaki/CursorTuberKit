@@ -13,6 +13,7 @@ import { characterProfile } from "../shared/characterProfile.js"
 import type { MemKraftPromptContext } from "./aiCommon.js"
 import { collectAutopilotDiscovery } from "./discovery/index.js"
 import { collectCursorRun } from "./cursorSdkRun.js"
+import { createCursorLocalOptions } from "./cursorLocalOptions.js"
 import { disposeAgentSafely, extractJsonObject, truncate, withTimeout } from "./cursorAgentUtils.js"
 import { applyLexicalPenalty, computeLexicalOverlapPenalty } from "./lib/lexicalOverlap.js"
 
@@ -123,6 +124,7 @@ export async function runAutopilotPlanner(
       },
     },
     apiKey: options.apiKey,
+    local: createCursorLocalOptions(),
     model: selectedModel,
     name: `${characterProfile.agentName} Autopilot Planner`,
   })

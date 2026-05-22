@@ -18,6 +18,7 @@ import {
 } from "./cursorSessionStore.js"
 import { appendCursorTelemetry } from "./cursorTelemetry.js"
 import type { CursorRunTelemetryRecord } from "./cursorTypes.js"
+import { createCursorLocalOptions } from "./cursorLocalOptions.js"
 
 type CursorWorkerInput = {
   compactPrompt?: string
@@ -133,7 +134,7 @@ try {
     resumed ??
     (await Agent.create({
       apiKey,
-      local: { cwd: process.cwd() },
+      local: createCursorLocalOptions(),
       model: selectedModel,
       name: characterProfile.agentName,
     }))
@@ -434,7 +435,7 @@ async function resumeExistingAgent(
   try {
     return await Agent.resume(record.agentId, {
       apiKey,
-      local: { cwd: process.cwd() },
+      local: createCursorLocalOptions(),
       model: selectedModel,
     })
   } catch (error) {
@@ -651,7 +652,7 @@ async function analyzeHookEmotionDrift(options: {
   const selectedModel = { id: options.emotionModel }
   const analysisAgent = await Agent.create({
     apiKey: options.apiKey,
-    local: { cwd: process.cwd() },
+    local: createCursorLocalOptions(),
     model: selectedModel,
     name: `${characterProfile.agentName} Emotion Drift`,
   })

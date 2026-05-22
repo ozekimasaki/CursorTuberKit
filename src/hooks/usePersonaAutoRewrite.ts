@@ -56,8 +56,9 @@ export function usePersonaAutoRewrite(options: {
       personaAutoRewriteLastTimestampRef.current = Date.now()
       personaAutoRewriteAssistantTurnCountRef.current = 0
       const noticeBase = result.summary?.trim() || "プロンプトを更新しました。"
+      const ruleNotice = result.characterRule.loaded ? " リポジトリ人格ルールも更新しました。" : ""
       setPersonaAutoRewriteNotice(
-        reason === "manual" ? `更新完了: ${noticeBase}` : `自動更新: ${noticeBase}`,
+        reason === "manual" ? `更新完了: ${noticeBase}${ruleNotice}` : `自動更新: ${noticeBase}${ruleNotice}`,
       )
       void options.syncRuntimeStatus()
       return true

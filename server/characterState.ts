@@ -10,6 +10,10 @@ import {
 } from "../shared/characterState.js"
 import type { ChatSettings } from "../shared/chatSettings.js"
 
+type CharacterPromptIdentity = Pick<ChatSettings, "characterFullPrompt" | "characterName" | "characterPrompt"> & {
+  characterRuleContent?: string
+}
+
 export type CharacterRuntimeContext = {
   hooks: CharacterHookModel
   metadata: CharacterStateMetadata
@@ -23,7 +27,7 @@ export type CharacterRuntimeContext = {
 
 export function resolveCharacterRuntimeContext(options: {
   browserSessionId: string
-  promptIdentity?: Pick<ChatSettings, "characterFullPrompt" | "characterName" | "characterPrompt">
+  promptIdentity?: CharacterPromptIdentity
   sinOverrides?: Partial<Record<CharacterSinName, number>>
 }): CharacterRuntimeContext {
   const state = createDefaultCharacterState(options.sinOverrides)
@@ -63,13 +67,14 @@ function buildCharacterPromptBlock(state: CharacterState, hooks: CharacterHookMo
   ].join("\n")
 }
 
-function createPersonaSignature(promptIdentity: Pick<ChatSettings, "characterFullPrompt" | "characterName" | "characterPrompt">) {
+function createPersonaSignature(promptIdentity: CharacterPromptIdentity) {
   return createHash("sha1")
     .update(
       JSON.stringify({
         characterFullPrompt: promptIdentity.characterFullPrompt,
         characterName: promptIdentity.characterName,
         characterPrompt: promptIdentity.characterPrompt,
+        characterRuleContent: promptIdentity.characterRuleContent ?? "",
       }),
     )
     .digest("hex")

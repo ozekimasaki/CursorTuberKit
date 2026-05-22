@@ -44,6 +44,7 @@ export type StreamAiResponseOptions = {
 
 type BuildAvatarPromptOptions = {
   characterContext?: CharacterRuntimeContext
+  characterRuleContent?: string
   chatSettings?: ChatSettings
   inputKind?: AvatarPromptInputKind
   memoryContext?: MemKraftPromptContext
@@ -75,8 +76,8 @@ function buildPromptSections(
   const memoryContext = selectPromptMemoryContext(options.memoryContext, chatSettings.memory.mode)
   const sections =
     mode === "full-context"
-      ? buildStablePromptSections(options.characterContext, chatSettings)
-      : buildResumeLeadSections(chatSettings)
+      ? buildStablePromptSections(options.characterContext, chatSettings, options.characterRuleContent)
+      : buildResumeLeadSections(chatSettings, options.characterRuleContent)
 
   if (mode === "full-context" && memoryContext?.injection) {
     sections.push("", "MemKraft から読み出した継続コンテキスト:", memoryContext.injection)
@@ -167,8 +168,21 @@ export function createEmptyMemKraftPromptContext(): MemKraftPromptContext {
   }
 }
 
-function buildStablePromptSections(characterContext: CharacterRuntimeContext | undefined, chatSettings: ChatSettings) {
+function buildStablePromptSections(
+  characterContext: CharacterRuntimeContext | undefined,
+  chatSettings: ChatSettings,
+  characterRuleContent: string | undefined,
+) {
   const sections = [renderCharacterFullPrompt(chatSettings)]
+  const renderedRuleContent = renderRuleContent(characterRuleContent, chatSettings)
+
+  if (renderedRuleContent) {
+    sections.push(
+      "",
+      "リポジトリ人格ルール（.cursor/rules/cursortuber-character.mdc）:",
+      renderedRuleContent,
+    )
+  }
 
   if (characterContext) {
     sections.push(
@@ -181,20 +195,38 @@ function buildStablePromptSections(characterContext: CharacterRuntimeContext | u
   return sections
 }
 
-function buildResumeLeadSections(chatSettings: ChatSettings) {
+function buildResumeLeadSections(chatSettings: ChatSettings, characterRuleContent: string | undefined) {
   const renderedFullPrompt = renderCharacterFullPrompt(chatSettings)
+  const renderedRuleContent = renderRuleContent(characterRuleContent, chatSettings)
+  const compactRuleContent = renderedRuleContent ? buildCompactCharacterPrompt(renderedRuleContent, "") : ""
 
-  return [
+  const sections = [
     "継続中の同じ配信セッションです。これまでの会話文脈は保持されています。",
     "自己紹介や世界観の説明を繰り返さず、直前までの流れを踏まえて自然に続けてください。",
     "今回も維持したいキャラクター方針と話し方の優先ルール:",
     buildCompactCharacterPrompt(chatSettings.characterPrompt, renderedFullPrompt),
-    "characterPrompt に書かれた口調、ですます調/常体、語尾、一人称、二人称、口癖、呼び方、NG 表現は短い返答でも崩さないでください。",
+  ]
+
+  if (compactRuleContent) {
+    sections.push("今回も維持したいリポジトリ人格ルール:", compactRuleContent)
+  }
+
+  sections.push(
+    "characterPrompt とリポジトリ人格ルールに書かれた口調、ですます調/常体、語尾、一人称、二人称、口癖、呼び方、NG 表現は短い返答でも崩さないでください。",
     "1ターンは①掴み→②展開→③渡しの3段を意識し、説明だけや謝罪だけで閉じないこと。",
     "直前ターンと同じ語り出し・同じ口癖・同じ話題語を繰り返さず、続ける場合は角度を変える。",
     "古い記憶よりも今回の入力と直近の会話を優先してください。",
     "今回の入力に対して、そのまま配信で話せる短く自然な返答を返してください。",
-  ]
+  )
+
+  return sections
+}
+
+function renderRuleContent(content: string | undefined, chatSettings: ChatSettings) {
+  return (content ?? "")
+    .replaceAll("{{characterName}}", chatSettings.characterName)
+    .replaceAll("{{characterPrompt}}", chatSettings.characterPrompt)
+    .trim()
 }
 
 function buildCompactCharacterPrompt(characterPrompt: string, renderedFullPrompt: string) {

@@ -88,7 +88,9 @@ npm run voicevox:stop
 - デフォルトの SVG アセットを差し替えて独自アバターにする
 - MotionPNGTuber アセットで動画ベース表示へ移行する
 - 背景、クロマキー、位置、拡大率をアバターに合わせて調整する
-- プロンプトやキャラクター設定を自分の配信方針に合わせ、人格プリセットとして保存する
+- `.cursor/rules/cursortuber-character.mdc` に、短い人格プロンプト・詳細人格プロンプト・補助人格ルールをまとめて置く。アプリはこの専用ファイルを明示的に runtime prompt へ合成します。`alwaysApply: false` のため、通常の coding agent 作業へ広く注入しない前提です。
+- **Settings** からキャラクター名、AI 管理 prompt の preview、persona auto-rewrite、人格プリセット、長期記憶設定を扱う。
+- persona auto-rewrite は `.cursor/rules/cursortuber-character.mdc` も更新します。git diff に出るため、コミット前に確認してください。秘密情報や認証情報はこの tracked rule に入れないでください。
 
 ## ライセンス
 
