@@ -84,11 +84,14 @@ body.stage-mode {
   right: 0;
   bottom: 0;
   padding: 2cqh 3cqw;
-  background: rgba(0, 0, 0, 0.6);
-  color: #fff;
-  font-size: clamp(10px, 2.4cqh, 22px);
+  background: var(--stage-caption-bg, rgba(0, 0, 0, 0.6));
+  color: var(--stage-caption-color, #fff);
+  font-family: var(--stage-caption-font-family, inherit);
+  font-weight: var(--stage-caption-font-weight, 500);
+  font-size: calc(clamp(12px, 3.2cqh, 32px) * var(--stage-caption-font-scale, 1));
   line-height: 1.5;
   text-align: center;
+  text-shadow: var(--stage-caption-shadow, none);
   z-index: 5;
   backdrop-filter: blur(4px);
 }

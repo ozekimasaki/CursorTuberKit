@@ -1,4 +1,4 @@
-import { useEffect, useRef, type CSSProperties, type ForwardedRef } from "react"
+import { useEffect, useMemo, useRef, type CSSProperties, type ForwardedRef } from "react"
 import { type AvatarState } from "./MaidCatAvatar"
 import { SvgAvatar } from "./SvgAvatar"
 import { MotionPngAvatar, type MotionPngAvatarHandle } from "./MotionPngAvatar"
@@ -8,6 +8,8 @@ import type { SinExpressionSignal } from "../../shared/sinsExpression"
 import type { AvatarMode, MotionPngAssetStatus, MotionPngSettings, SvgAvatarSettings, SvgCharacterId } from "../lib/avatarConfig"
 import type { Viseme } from "../lib/visemes"
 import type { PlatformViewerEvent } from "../../shared/platformChat"
+import { defaultStageCaptionStyle, type StageCaptionStyle } from "../lib/stagePreferences"
+import { useCaptionFont } from "../lib/googleFonts"
 
 type StageBackground =
   | { kind: "image"; url: string; name: string }
@@ -20,6 +22,7 @@ type StageViewProps = {
   avatarState: AvatarState
   caption: string
   showCaption: boolean
+  captionStyle?: StageCaptionStyle
   showComments: boolean
   liveViewerEvents: PlatformViewerEvent[]
   emotion: Emotion
@@ -40,6 +43,7 @@ export function StageView({
   avatarState,
   caption,
   showCaption,
+  captionStyle = defaultStageCaptionStyle,
   showComments,
   liveViewerEvents,
   emotion,
@@ -80,6 +84,22 @@ export function StageView({
     ro.observe(parent)
     return () => ro.disconnect()
   }, [avatarMode])
+
+  const captionFont = useCaptionFont(captionStyle.fontId)
+  const captionStyleVars = useMemo<CSSProperties>(() => {
+    const bg = Math.max(0, Math.min(1, captionStyle.backgroundOpacity))
+    const outline = captionStyle.outlineEnabled
+      ? "0 0 4px rgba(0,0,0,0.9), 0 1px 2px rgba(0,0,0,0.95), 1px 0 0 rgba(0,0,0,0.9), -1px 0 0 rgba(0,0,0,0.9), 0 1px 0 rgba(0,0,0,0.9), 0 -1px 0 rgba(0,0,0,0.9)"
+      : "none"
+    return {
+      "--stage-caption-font-family": captionFont.stack,
+      "--stage-caption-font-weight": String(captionStyle.fontWeight),
+      "--stage-caption-font-scale": String(captionStyle.fontSizeScale),
+      "--stage-caption-color": captionStyle.color,
+      "--stage-caption-bg": `rgba(0, 0, 0, ${bg})`,
+      "--stage-caption-shadow": outline,
+    } as CSSProperties
+  }, [captionFont, captionStyle])
 
   return (
     <main
@@ -152,7 +172,11 @@ export function StageView({
       )}
 
       {showCaption && (
-        <div className={`stage-view__caption${caption ? "" : " stage-view__caption--empty"}`} aria-live="polite">
+        <div
+          className={`stage-view__caption${caption ? "" : " stage-view__caption--empty"}`}
+          aria-live="polite"
+          style={captionStyleVars}
+        >
           {caption}
         </div>
       )}

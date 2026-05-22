@@ -20,7 +20,9 @@ import { characterSinNames, type CharacterSinName, type CharacterSinValues } fro
 import type { ModerationAssessment } from "../../shared/moderation"
 import { svgCharacterChoices, type AvatarMode, type MotionPngAssetStatus, type MotionPngSettings, type SvgAvatarSettings, type SvgCharacterId } from "../lib/avatarConfig"
 import { type VoicevoxHealth } from "../lib/voicevox"
-import type { StageDisplayPreferences } from "../lib/stagePreferences"
+import type { StageCaptionStyle, StageDisplayPreferences } from "../lib/stagePreferences"
+import { defaultStageCaptionStyle } from "../lib/stagePreferences"
+import { captionFontOptions, loadCaptionFont } from "../lib/googleFonts"
 import {
   backgroundPresetCategoryLabels,
   backgroundPresets,
@@ -809,6 +811,16 @@ export function SettingsModal(props: SettingsModalProps) {
                 </label>
               </div>
             </div>
+
+            <CaptionStyleEditor
+              style={stageDisplayPrefs.captionStyle}
+              disabled={!stageDisplayPrefs.showCaption}
+              onChange={(patch) =>
+                onStageDisplayPrefsChange({
+                  captionStyle: { ...stageDisplayPrefs.captionStyle, ...patch },
+                })
+              }
+            />
           </section>
 
           {/* 音声 */}
@@ -994,3 +1006,159 @@ function BackgroundPresetPicker({ selectedId, onSelect }: BackgroundPresetPicker
     </div>
   )
 }
+
+type CaptionStyleEditorProps = {
+  style: StageCaptionStyle
+  disabled?: boolean
+  onChange: (patch: Partial<StageCaptionStyle>) => void
+}
+
+function CaptionStyleEditor({ style, disabled, onChange }: CaptionStyleEditorProps) {
+  const selectedFont = captionFontOptions.find((opt) => opt.id === style.fontId) ?? captionFontOptions[0]
+
+  useEffect(() => {
+    loadCaptionFont(selectedFont)
+  }, [selectedFont])
+
+  useEffect(() => {
+    captionFontOptions.forEach((opt) => {
+      if (opt.googleFamily) loadCaptionFont(opt)
+    })
+  }, [])
+
+  const availableWeights = selectedFont.weights ?? [400, 500, 700]
+  const previewStyle = {
+    fontFamily: selectedFont.stack,
+    fontWeight: style.fontWeight,
+    color: style.color,
+    background: `rgba(0,0,0,${style.backgroundOpacity})`,
+    textShadow: style.outlineEnabled
+      ? "0 0 4px rgba(0,0,0,0.9), 1px 0 0 rgba(0,0,0,0.9), -1px 0 0 rgba(0,0,0,0.9), 0 1px 0 rgba(0,0,0,0.9), 0 -1px 0 rgba(0,0,0,0.9)"
+      : "none",
+    fontSize: `${Math.round(20 * style.fontSizeScale)}px`,
+    padding: "10px 14px",
+    borderRadius: 8,
+    lineHeight: 1.5,
+    textAlign: "center" as const,
+    opacity: disabled ? 0.55 : 1,
+  }
+
+  return (
+    <div className="card" style={{ marginTop: 12, opacity: disabled ? 0.7 : 1 }}>
+      <div className="card__header">
+        <div>
+          <p className="card__title">字幕スタイル</p>
+          <p className="card__hint card__hint--compact">
+            配信での見やすさに合わせてフォント・サイズ・色を調整できます。Google Fonts から日本語向けの書体を選べます。
+          </p>
+        </div>
+      </div>
+
+      <div style={previewStyle}>
+        {disabled ? "字幕は現在オフです" : "プレビュー：あいうえお ABC かわいい字幕 ✨"}
+      </div>
+
+      <div className="card__row">
+        <span className="card__key">フォント</span>
+        <select
+          value={style.fontId}
+          disabled={disabled}
+          onChange={(e) => {
+            const next = captionFontOptions.find((opt) => opt.id === e.target.value)
+            if (!next) return
+            loadCaptionFont(next)
+            const weights = next.weights ?? [400, 500, 700]
+            const nextWeight = weights.includes(style.fontWeight) ? style.fontWeight : (weights[weights.length - 1] ?? 500)
+            onChange({ fontId: next.id, fontWeight: nextWeight })
+          }}
+        >
+          {captionFontOptions.map((opt) => (
+            <option key={opt.id} value={opt.id}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="card__row">
+        <span className="card__key">太さ</span>
+        <select
+          value={style.fontWeight}
+          disabled={disabled}
+          onChange={(e) => onChange({ fontWeight: Number(e.target.value) })}
+        >
+          {availableWeights.map((w) => (
+            <option key={w} value={w}>
+              {w}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="card__row">
+        <span className="card__key">サイズ {(style.fontSizeScale * 100).toFixed(0)}%</span>
+        <input
+          type="range"
+          min={0.6}
+          max={2.5}
+          step={0.05}
+          value={style.fontSizeScale}
+          disabled={disabled}
+          onChange={(e) => onChange({ fontSizeScale: Number(e.target.value) })}
+          style={{ flex: 1, minWidth: 160 }}
+        />
+      </div>
+
+      <div className="card__row">
+        <span className="card__key">文字色</span>
+        <input
+          type="color"
+          value={style.color}
+          disabled={disabled}
+          onChange={(e) => onChange({ color: e.target.value })}
+          style={{ width: 56, height: 28, border: "none", background: "transparent", cursor: "pointer" }}
+        />
+      </div>
+
+      <div className="card__row">
+        <span className="card__key">背景の濃さ {(style.backgroundOpacity * 100).toFixed(0)}%</span>
+        <input
+          type="range"
+          min={0}
+          max={1}
+          step={0.05}
+          value={style.backgroundOpacity}
+          disabled={disabled}
+          onChange={(e) => onChange({ backgroundOpacity: Number(e.target.value) })}
+          style={{ flex: 1, minWidth: 160 }}
+        />
+      </div>
+
+      <div className="card__row">
+        <span className="card__key">縁取り（黒フチ）</span>
+        <label className="toggle">
+          <input
+            type="checkbox"
+            checked={style.outlineEnabled}
+            disabled={disabled}
+            onChange={(e) => onChange({ outlineEnabled: e.target.checked })}
+          />
+          <span className="toggle__slider" />
+        </label>
+      </div>
+
+      <div className="card__row">
+        <button
+          type="button"
+          className="btn btn--secondary"
+          disabled={disabled}
+          onClick={() => onChange({ ...defaultStageCaptionStyle })}
+        >
+          既定値に戻す
+        </button>
+      </div>
+    </div>
+  )
+}
+
+

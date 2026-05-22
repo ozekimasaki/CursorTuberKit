@@ -6,14 +6,56 @@ const SVG_SETTINGS_KEY = "ctk.svg.settings"
 const AVATAR_MODE_KEY = "ctk.avatar.mode"
 const SVG_CHARACTER_KEY = "ctk.svg.character"
 
+export type StageCaptionStyle = {
+  fontId: string
+  fontSizeScale: number
+  fontWeight: number
+  color: string
+  backgroundOpacity: number
+  outlineEnabled: boolean
+}
+
 export type StageDisplayPreferences = {
   showCaption: boolean
   showComments: boolean
+  captionStyle: StageCaptionStyle
+}
+
+export const defaultStageCaptionStyle: StageCaptionStyle = {
+  fontId: "zen-maru-gothic",
+  fontSizeScale: 1.4,
+  fontWeight: 700,
+  color: "#ffffff",
+  backgroundOpacity: 0.55,
+  outlineEnabled: true,
 }
 
 export const defaultStageDisplayPreferences: StageDisplayPreferences = {
   showCaption: true,
   showComments: false,
+  captionStyle: defaultStageCaptionStyle,
+}
+
+function clampNumber(value: unknown, min: number, max: number, fallback: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return fallback
+  return Math.min(max, Math.max(min, value))
+}
+
+function sanitizeCaptionStyle(value: unknown): StageCaptionStyle {
+  if (!value || typeof value !== "object") return defaultStageCaptionStyle
+  const v = value as Partial<StageCaptionStyle>
+  return {
+    fontId: typeof v.fontId === "string" && v.fontId.length > 0 ? v.fontId : defaultStageCaptionStyle.fontId,
+    fontSizeScale: clampNumber(v.fontSizeScale, 0.5, 3, defaultStageCaptionStyle.fontSizeScale),
+    fontWeight: clampNumber(v.fontWeight, 100, 900, defaultStageCaptionStyle.fontWeight),
+    color:
+      typeof v.color === "string" && /^#[0-9a-fA-F]{6}$/.test(v.color)
+        ? v.color
+        : defaultStageCaptionStyle.color,
+    backgroundOpacity: clampNumber(v.backgroundOpacity, 0, 1, defaultStageCaptionStyle.backgroundOpacity),
+    outlineEnabled:
+      typeof v.outlineEnabled === "boolean" ? v.outlineEnabled : defaultStageCaptionStyle.outlineEnabled,
+  }
 }
 
 function safeLocalStorage(): Storage | null {
@@ -36,6 +78,7 @@ export function loadStageDisplayPreferences(): StageDisplayPreferences {
       showCaption: typeof parsed.showCaption === "boolean" ? parsed.showCaption : defaultStageDisplayPreferences.showCaption,
       showComments:
         typeof parsed.showComments === "boolean" ? parsed.showComments : defaultStageDisplayPreferences.showComments,
+      captionStyle: sanitizeCaptionStyle(parsed.captionStyle),
     }
   } catch {
     return defaultStageDisplayPreferences

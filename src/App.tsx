@@ -1975,6 +1975,7 @@ export function App() {
       avatarState={avatarState}
       caption={responseText}
       showCaption={stageDisplayPrefs.showCaption}
+      captionStyle={stageDisplayPrefs.captionStyle}
       showComments={stageDisplayPrefs.showComments}
       liveViewerEvents={liveViewerEvents}
       emotion={emotion}
