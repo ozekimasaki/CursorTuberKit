@@ -30,7 +30,7 @@ CursorTuberKit is meant to be a base app for:
 - Node.js 22+
 - Bun 1.3.11+ (recommended in this repository)
 - Podman or Docker
-- Python 3.9+ only when using `MEMKRAFT_EXECUTION_MODE=local`
+- Python 3.9+ only when using `memkraft.executionMode: "local"` in `config/local.json`
 - Cursor API key
 
 ## Setup
@@ -52,20 +52,18 @@ Copy-Item .env.example .env
 
 ## Environment
 
-`.env.example` contains the full template. The minimum Cursor / VOICEVOX-related values are:
+`.env` is only for secrets and process-level values. Copy `.env.example` and set at least:
 
 ```env
-AI_PROVIDER=cursor
 CURSOR_API_KEY=crsr_your_api_key_here
-CURSOR_MODEL=composer-2.5
-CURSOR_CHARACTER_MODEL=composer-2.5
-CURSOR_EMOTION_MODEL=composer-2.5
-VOICEVOX_URL=http://127.0.0.1:50021
-VOICEVOX_SPEAKER=1
-PORT=8787
 ```
 
-This project is **Cursor-only**. Keep `AI_PROVIDER=cursor` or omit it.
+Normal non-secret settings live in JSON:
+
+- `config/defaults.json` — committed defaults.
+- `config/local.json` — local overrides; copy from `config/local.example.json` and keep it uncommitted.
+
+Use `config/local.json` for ports, Cursor model names, VOICEVOX URL/container settings, MemKraft paths/runtime, automation policy, and MCP discovery URLs. This project is **Cursor-only**; there is no provider switch.
 
 ## Development
 

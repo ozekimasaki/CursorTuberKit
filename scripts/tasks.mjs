@@ -3,11 +3,13 @@ import { existsSync } from "node:fs"
 import path from "node:path"
 import net from "node:net"
 import { spawn } from "node:child_process"
+import { loadAppConfig } from "../config/load-config.mjs"
 
 const projectRoot = process.cwd()
 const task = process.argv[2]
-const backendPort = Number(process.env.PORT ?? 8787)
-const clientPort = Number(process.env.VITE_PORT ?? 5173)
+const appConfig = loadAppConfig()
+const backendPort = appConfig.server.port
+const clientPort = appConfig.client.port
 
 if (!task) {
   console.error("Usage: node scripts/tasks.mjs <task>")
@@ -291,11 +293,7 @@ function isPortAvailable(port) {
   })
 }
 
-function shouldUseBun(mode, options) {
-  if ((mode === "server-dev" || mode === "server-start") && process.env.AI_PROVIDER === "cursor") {
-    return false
-  }
-
+function shouldUseBun(_mode, options) {
   if (options.preferBun) {
     return true
   }

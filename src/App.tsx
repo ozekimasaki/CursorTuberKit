@@ -7,6 +7,7 @@ import {
 } from "../shared/automation"
 import type { ChatMetadataPayload, ChatSessionPayload } from "../shared/chatStream"
 import { createDefaultChatSettings, type ChatSettings } from "../shared/chatSettings"
+import type { AppSettings, AppUiSettings } from "../shared/appSettings"
 import { createEmptyCharacterRuleStatus, type CharacterRuleStatus } from "../shared/characterRules"
 import type { CharacterSinValues } from "../shared/characterState"
 import { characterProfile } from "../shared/characterProfile"
@@ -125,14 +126,10 @@ import {
   loadStageDisplayPreferences,
   loadSvgAvatarSettings,
   loadSvgCharacter,
-  saveAvatarMode,
-  saveMotionPngSettings,
-  saveStageDisplayPreferences,
-  saveSvgAvatarSettings,
-  saveSvgCharacter,
   stagePreferenceStorageKeys,
   type StageDisplayPreferences,
 } from "./lib/stagePreferences"
+import { fetchAppSettings, saveAppSettings } from "./lib/appSettings"
 import type { CharacterContentSuggestion, CharacterContentSurface } from "./lib/contentSurface"
 
 const SettingsModal = lazy(() =>
@@ -140,6 +137,43 @@ const SettingsModal = lazy(() =>
 )
 
 export type { RuntimeTone, StreamRuntimeActivity, StreamStatus } from "./lib/runtimeProgress"
+
+const LOCAL_STORAGE_SETTINGS_MIGRATED_KEY = "ctk.app-settings.local-storage-migrated"
+
+function collectLocalStorageUiSettings(): AppUiSettings | null {
+  if (typeof window === "undefined") return null
+
+  const storage = safeLocalStorage()
+  if (!storage) return null
+
+  const hasLegacyValue = Object.values(stagePreferenceStorageKeys).some((key) => storage.getItem(key) !== null)
+  if (!hasLegacyValue) return null
+
+  return {
+    avatarMode: loadAvatarMode() ?? "svg",
+    motionPngSettings: loadMotionPngSettings(),
+    stageDisplay: loadStageDisplayPreferences(),
+    svgAvatarSettings: loadSvgAvatarSettings(),
+    svgCharacter: loadSvgCharacter(),
+  }
+}
+
+function hasMigratedLocalStorageSettings() {
+  return safeLocalStorage()?.getItem(LOCAL_STORAGE_SETTINGS_MIGRATED_KEY) === "1"
+}
+
+function markLocalStorageSettingsMigrated() {
+  safeLocalStorage()?.setItem(LOCAL_STORAGE_SETTINGS_MIGRATED_KEY, "1")
+}
+
+function safeLocalStorage(): Storage | null {
+  if (typeof window === "undefined") return null
+  try {
+    return window.localStorage
+  } catch {
+    return null
+  }
+}
 
 
 
@@ -184,6 +218,9 @@ export function App() {
   const [stageDisplayPrefs, setStageDisplayPrefs] = useState<StageDisplayPreferences>(() =>
     loadStageDisplayPreferences(),
   )
+  const [savedUiSettings, setSavedUiSettings] = useState<AppUiSettings | null>(null)
+  const [settingsSaveBusy, setSettingsSaveBusy] = useState(false)
+  const [settingsSaveNotice, setSettingsSaveNotice] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const avatarModeRef = useRef<AvatarMode>(avatarMode)
   const autoReplyEnabledRef = useRef(autoReplyEnabled)
@@ -217,8 +254,6 @@ export function App() {
     handleCharacterPresetDelete,
     handleCharacterPresetUpdate,
     handleCharacterStateReset,
-    handleChatSettingsSave,
-    handleVoiceSettingsChange,
     setChatSettings,
   } = useChatSettingsManager({ showError, syncRuntimeStatus })
 
@@ -363,25 +398,89 @@ export function App() {
     setStageDisplayPrefs((current) => ({ ...current, ...patch }))
   }
 
-  useEffect(() => {
-    saveAvatarMode(avatarMode)
-  }, [avatarMode])
+  function collectCurrentUiSettings(): AppUiSettings {
+    return {
+      avatarMode,
+      motionPngSettings,
+      stageDisplay: stageDisplayPrefs,
+      svgAvatarSettings,
+      svgCharacter,
+    }
+  }
+
+  function applyUiSettings(settings: AppUiSettings) {
+    setAvatarMode(settings.avatarMode)
+    setMotionPngSettings(settings.motionPngSettings)
+    setStageDisplayPrefs(settings.stageDisplay)
+    setSvgAvatarSettings(settings.svgAvatarSettings)
+    setSvgCharacter(settings.svgCharacter)
+  }
+
+  async function handleAllSettingsSave(nextChatSettings: ChatSettings) {
+    setSettingsSaveBusy(true)
+    setSettingsSaveNotice(null)
+
+    try {
+      const currentUi = collectCurrentUiSettings()
+      const saved = await saveAppSettings({
+        chatSettings: nextChatSettings,
+        schemaVersion: 1,
+        ui: currentUi,
+      })
+      setChatSettings(saved.chatSettings)
+      applyUiSettings(saved.ui)
+      setSavedUiSettings(saved.ui)
+      setSettingsSaveNotice("設定を保存しました。")
+      void syncRuntimeStatus()
+    } catch (error) {
+      showError(error instanceof Error ? error.message : "設定の保存に失敗しました。")
+    } finally {
+      setSettingsSaveBusy(false)
+    }
+  }
+
+  function handleSettingsDiscard() {
+    if (!savedUiSettings) return
+    applyUiSettings(savedUiSettings)
+    setSettingsSaveNotice("未保存の変更を破棄しました。")
+  }
 
   useEffect(() => {
-    saveMotionPngSettings(motionPngSettings)
-  }, [motionPngSettings])
+    const abortController = new AbortController()
 
-  useEffect(() => {
-    saveSvgAvatarSettings(svgAvatarSettings)
-  }, [svgAvatarSettings])
+    fetchAppSettings(abortController.signal)
+      .then(async (settings) => {
+        if (abortController.signal.aborted) return
 
-  useEffect(() => {
-    saveSvgCharacter(svgCharacter)
-  }, [svgCharacter])
+        const localUi = collectLocalStorageUiSettings()
+        const shouldMigrateLocalStorage = localUi !== null && !hasMigratedLocalStorageSettings()
+        const effectiveSettings: AppSettings = shouldMigrateLocalStorage
+          ? {
+              ...settings,
+              ui: localUi,
+            }
+          : settings
 
-  useEffect(() => {
-    saveStageDisplayPreferences(stageDisplayPrefs)
-  }, [stageDisplayPrefs])
+        setChatSettings(effectiveSettings.chatSettings)
+        applyUiSettings(effectiveSettings.ui)
+        setSavedUiSettings(effectiveSettings.ui)
+
+        if (shouldMigrateLocalStorage) {
+          const saved = await saveAppSettings(effectiveSettings, abortController.signal)
+          setChatSettings(saved.chatSettings)
+          applyUiSettings(saved.ui)
+          setSavedUiSettings(saved.ui)
+          markLocalStorageSettingsMigrated()
+        }
+      })
+      .catch((error) => {
+        if (!isAbortError(error)) {
+          showError(error instanceof Error ? error.message : "設定の取得に失敗しました。")
+        }
+      })
+
+    return () => abortController.abort()
+  }, [setChatSettings, showError])
 
   useEffect(() => {
     if (typeof window === "undefined") return
@@ -2087,7 +2186,6 @@ export function App() {
         onVoiceEnabledChange={setVoiceEnabled}
         voicevoxHealth={voicevoxHealth}
         voiceSettings={chatSettings.voice}
-        onVoiceSettingsChange={handleVoiceSettingsChange}
         latestAutomationPolicy={latestAutomationEnvelope?.policy ?? platformState.automationPolicy}
         latestModeration={latestModeration}
         chatSettings={chatSettings}
@@ -2104,7 +2202,15 @@ export function App() {
         onCharacterPresetUpdate={handleCharacterPresetUpdate}
         onCharacterStateReset={handleCharacterStateReset}
         onChatMemoryClear={handleChatMemoryClear}
-        onChatSettingsSave={handleChatSettingsSave}
+        onAllSettingsSave={handleAllSettingsSave}
+        onSettingsDiscard={handleSettingsDiscard}
+        settingsSaveBusy={settingsSaveBusy}
+        settingsSaveNotice={settingsSaveNotice}
+        uiSettingsDirty={
+          savedUiSettings
+            ? JSON.stringify(collectCurrentUiSettings()) !== JSON.stringify(savedUiSettings)
+            : false
+        }
         onPersonaAutoRewriteRequest={handlePersonaAutoRewriteRequest}
         personaAutoRewriteBusy={personaAutoRewriteBusy}
         personaAutoRewriteNotice={personaAutoRewriteNotice}

@@ -289,18 +289,18 @@ function isChatMetadataPayload(value: unknown): value is ChatMetadataPayload {
     isCharacterStateMetadata(value.characterState) &&
     isChatProvider(value.provider) &&
     typeof value.model === "string" &&
-    (value.modelSource === "default" || value.modelSource === "env") &&
+    (value.modelSource === "default" || value.modelSource === "config") &&
     typeof value.supportsProviderEmotion === "boolean" &&
     typeof value.supportsCharacterSubagents === "boolean" &&
     typeof value.supportsProviderSessionReuse === "boolean" &&
     (value.characterAgentModel === undefined || typeof value.characterAgentModel === "string") &&
     (value.characterAgentModelSource === undefined ||
       value.characterAgentModelSource === "default" ||
-      value.characterAgentModelSource === "env") &&
+      value.characterAgentModelSource === "config") &&
     (value.emotionModel === undefined || typeof value.emotionModel === "string") &&
     (value.emotionModelSource === undefined ||
       value.emotionModelSource === "default" ||
-      value.emotionModelSource === "env")
+      value.emotionModelSource === "config")
   )
 }
 

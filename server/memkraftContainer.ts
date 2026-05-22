@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process"
 import { existsSync } from "node:fs"
 import path from "node:path"
+import { readAppConfig } from "./appConfig.js"
 
 export type MemKraftContainerStatus = {
   executionMode: "local" | "container"
@@ -37,7 +38,7 @@ type CommandResult = {
 let imagePrepared = false
 
 export function getMemKraftExecutionMode() {
-  return process.env.MEMKRAFT_EXECUTION_MODE?.trim().toLowerCase() === "local" ? "local" : "container"
+  return readAppConfig().memkraft.executionMode
 }
 
 export async function prepareMemKraftContainer() {
@@ -92,15 +93,16 @@ export async function stopMemKraftContainer() {
 
 export async function executeMemKraftInContainer(command: string, payload: unknown) {
   const config = await prepareMemKraftContainerConfig()
+  const appConfig = readAppConfig()
   const result = await runCommand(
     config.runtime,
     [
       "exec",
       "-i",
       "-e",
-      `MEMKRAFT_AGENT_ID=${process.env.MEMKRAFT_AGENT_ID?.trim() || "cursor-tuber-kit"}`,
+      `MEMKRAFT_AGENT_ID=${appConfig.memkraft.agentId}`,
       "-e",
-      `MEMKRAFT_CHANNEL_ID=${process.env.MEMKRAFT_CHANNEL_ID?.trim() || "cursor-tuber-kit-global"}`,
+      `MEMKRAFT_CHANNEL_ID=${appConfig.memkraft.channelId}`,
       "-e",
       `MEMKRAFT_DIR=${getContainerMemoryDir(config)}`,
       config.containerName,
@@ -126,6 +128,7 @@ export async function executeMemKraftInContainer(command: string, payload: unkno
 }
 
 function resolveContainerConfig(): MemKraftContainerConfig {
+  const appConfig = readAppConfig()
   const projectDir = process.cwd()
   const helperPath = path.resolve(projectDir, resolveMemKraftHelperRelativePath())
   const memoryDir = resolveMemKraftDir(projectDir)
@@ -145,14 +148,14 @@ function resolveContainerConfig(): MemKraftContainerConfig {
 
   return {
     buildContext: path.dirname(containerfilePath),
-    containerName: process.env.MEMKRAFT_CONTAINER_NAME?.trim() || "cursor-tuber-kit-memkraft",
+    containerName: appConfig.memkraft.container.name,
     containerfilePath,
     helperPath,
-    image: process.env.MEMKRAFT_CONTAINER_IMAGE?.trim() || "cursor-tuber-kit-memkraft:latest",
+    image: appConfig.memkraft.container.image,
     memoryDir,
     projectDir,
-    runtime: process.env.MEMKRAFT_CONTAINER_RUNTIME?.trim() || "podman",
-    workdir: process.env.MEMKRAFT_CONTAINER_WORKDIR?.trim() || "/workspace",
+    runtime: appConfig.memkraft.container.runtime,
+    workdir: appConfig.memkraft.container.workdir,
   }
 }
 
@@ -261,7 +264,7 @@ function getContainerMemoryDir(config: MemKraftContainerConfig) {
 }
 
 function resolveMemKraftDir(projectDir: string) {
-  const configured = process.env.MEMKRAFT_DIR?.trim()
+  const configured = readAppConfig().memkraft.dir.trim()
   return path.resolve(projectDir, configured || "memory")
 }
 

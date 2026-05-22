@@ -1,4 +1,5 @@
 import type { ChatVoiceSettings } from "../shared/chatSettings.js"
+import { readAppConfig } from "./appConfig.js"
 
 type AudioQuery = Record<string, unknown>
 
@@ -129,14 +130,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function getVoicevoxUrl() {
-  return (process.env.VOICEVOX_URL ?? "http://127.0.0.1:50021").replace(/\/$/, "")
+  return readAppConfig().voicevox.url.replace(/\/$/, "")
 }
 
 function getVoicevoxSpeaker() {
-  const parsed = Number(process.env.VOICEVOX_SPEAKER ?? 1)
+  const parsed = readAppConfig().voicevox.defaultSpeakerId
 
   if (!Number.isInteger(parsed) || parsed < 0) {
-    throw new VoicevoxError("VOICEVOX_SPEAKER は0以上の整数で指定してください。")
+    throw new VoicevoxError("voicevox.defaultSpeakerId は0以上の整数で指定してください。")
   }
 
   return parsed

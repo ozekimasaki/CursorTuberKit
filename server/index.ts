@@ -41,9 +41,12 @@ import { fetchVoicevoxSpeakers, getVoicevoxHealth, synthesizeVoice, VoicevoxErro
 import { AutopilotPlannerError, runAutopilotPlanner } from "./autopilotPlanner.js"
 import { PersonaCuratorError, runPersonaCurator } from "./personaCurator.js"
 import type { PersonaAutoRewriteRequestBody, PersonaAutoRewriteResponse } from "../shared/personaCurator.js"
+import { normalizeAppSettings, type AppSettings } from "../shared/appSettings.js"
 import { describeToneDirective } from "../shared/sinsBias.js"
 import type { AutopilotTopicRequestBody, AutopilotTopicResponse } from "../shared/autopilot.js"
 import { normalizeCharacterSinValues } from "../shared/characterState.js"
+import { readAppConfig } from "./appConfig.js"
+import { overwriteAppSettings, readAppSettings } from "./appSettings.js"
 import { asyncRoute, readRequestSignal } from "./lib/asyncRoute.js"
 import { getErrorMessage } from "./lib/errors.js"
 import {
@@ -75,7 +78,8 @@ if (!isBunRuntime) {
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const app = express()
-const port = Number(process.env.PORT ?? 8787)
+const appConfig = readAppConfig()
+const port = appConfig.server.port
 const platformChatOrchestrator = new PlatformChatOrchestrator()
 const runtimeStatusTracker = new RuntimeStatusTracker()
 
@@ -108,6 +112,15 @@ app.get("/api/runtime/status", asyncRoute(async (_request, response) => {
 
 app.get("/api/chat-settings", asyncRoute(async (_request, response) => {
   response.json(await readChatSettings())
+}))
+
+app.get("/api/app-settings", asyncRoute(async (_request, response) => {
+  response.json(await readAppSettings())
+}))
+
+app.put("/api/app-settings", asyncRoute(async (request: Request<unknown, unknown, AppSettings>, response) => {
+  const normalized = normalizeAppSettings(request.body, await readAppSettings())
+  response.json(await overwriteAppSettings(normalized))
 }))
 
 app.put("/api/chat-settings", asyncRoute(async (request, response) => {
@@ -727,7 +740,7 @@ app.post(
     }
 
     const route = resolveAiMetadata()
-    const plannerModel = process.env.CURSOR_AUTOPILOT_MODEL?.trim() || route.characterAgentModel || route.model
+    const plannerModel = appConfig.cursor.autopilotModel || route.characterAgentModel || route.model
 
     try {
       const result = await runAutopilotPlanner({
@@ -794,8 +807,7 @@ app.post(
     }
 
     const route = resolveAiMetadata()
-    const curatorModel =
-      process.env.CURSOR_PERSONA_CURATOR_MODEL?.trim() || route.characterAgentModel || route.model
+    const curatorModel = appConfig.cursor.personaCuratorModel || route.characterAgentModel || route.model
 
     try {
       const result = await runPersonaCurator({

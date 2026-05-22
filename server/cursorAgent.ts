@@ -1,4 +1,5 @@
 import { spawn, spawnSync } from "node:child_process"
+import { readAppConfig } from "./appConfig.js"
 import { existsSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import type { ChatActionPayload, ChatSessionPayload } from "../shared/chatStream.js"
@@ -194,7 +195,7 @@ function resolveNodeExecutable() {
     return cachedNodeExecutable
   }
 
-  const envOverride = process.env.NODE_EXECUTABLE?.trim()
+  const envOverride = readAppConfig().runtime.nodeExecutable?.trim() ?? ""
 
   if (envOverride) {
     cachedNodeExecutable = envOverride
@@ -221,7 +222,7 @@ function resolveNodeExecutable() {
   }
 
   throw new CursorConfigurationError(
-    "Cursor プロバイダを Bun で使うには Node.js 実行ファイルが必要です。Node を PATH に通すか、NODE_EXECUTABLE を設定してください。",
+    "Cursor プロバイダを Bun で使うには Node.js 実行ファイルが必要です。Node を PATH に通すか、config/local.json の runtime.nodeExecutable を設定してください。",
   )
 }
 

@@ -1,11 +1,13 @@
 import { spawn } from "node:child_process"
+import { loadAppConfig } from "../config/load-config.mjs"
 
 const command = process.argv[2]
-const runtime = process.env.VOICEVOX_CONTAINER_RUNTIME ?? "podman"
-const containerName = process.env.VOICEVOX_CONTAINER_NAME ?? "cursor-tuber-kit-voicevox"
-const image = normalizeImageRef(process.env.VOICEVOX_IMAGE ?? "docker.io/voicevox/voicevox_engine:cpu-latest")
-const port = process.env.VOICEVOX_PORT ?? "50021"
-const voicevoxUrl = process.env.VOICEVOX_URL ?? `http://127.0.0.1:${port}`
+const appConfig = loadAppConfig()
+const runtime = appConfig.voicevox.container.runtime
+const containerName = appConfig.voicevox.container.name
+const image = normalizeImageRef(appConfig.voicevox.container.image)
+const port = String(appConfig.voicevox.container.port)
+const voicevoxUrl = appConfig.voicevox.url || `http://127.0.0.1:${port}`
 
 if (!command || !["start", "stop", "status"].includes(command)) {
   console.error("Usage: node scripts/voicevox.mjs <start|stop|status>  (or: bun scripts/voicevox.mjs <start|stop|status>)")

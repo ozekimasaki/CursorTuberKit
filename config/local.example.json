@@ -1,0 +1,41 @@
+{
+  "server": {
+    "port": 8787
+  },
+  "client": {
+    "port": 5173
+  },
+  "cursor": {
+    "model": "composer-2.5",
+    "characterModel": "composer-2.5",
+    "emotionModel": "composer-2.5",
+    "autopilotModel": "composer-2.5",
+    "personaCuratorModel": "composer-2.5"
+  },
+  "voicevox": {
+    "url": "http://127.0.0.1:50021",
+    "defaultSpeakerId": 1,
+    "container": {
+      "runtime": "podman",
+      "name": "cursor-tuber-kit-voicevox",
+      "image": "docker.io/voicevox/voicevox_engine:cpu-latest",
+      "port": 50021
+    }
+  },
+  "memkraft": {
+    "dir": "./memory",
+    "executionMode": "container",
+    "pythonBin": "python3",
+    "agentId": "cursor-tuber-kit",
+    "channelId": "cursor-tuber-kit-global",
+    "container": {
+      "runtime": "podman",
+      "name": "cursor-tuber-kit-memkraft",
+      "image": "cursor-tuber-kit-memkraft:latest",
+      "workdir": "/workspace"
+    }
+  },
+  "runtime": {
+    "nodeExecutable": null
+  }
+}

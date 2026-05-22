@@ -3,6 +3,7 @@ import { existsSync } from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import type { ConversationTurn, MemKraftPromptContext, StoredExchange } from "./aiCommon.js"
+import { readAppConfig } from "./appConfig.js"
 import { executeMemKraftInContainer, getMemKraftExecutionMode } from "./memkraftContainer.js"
 
 type LoadContextResponse = {
@@ -89,14 +90,15 @@ async function runMemKraftCommand<T>(command: string, payload: unknown): Promise
   }
 
   const pythonExecutable = resolvePythonExecutable()
+  const config = readAppConfig()
 
   return new Promise<T>((resolve, reject) => {
     const child = spawn(pythonExecutable, [helperPath, command], {
       cwd: process.cwd(),
       env: {
         ...process.env,
-        MEMKRAFT_AGENT_ID: process.env.MEMKRAFT_AGENT_ID?.trim() || "cursor-tuber-kit",
-        MEMKRAFT_CHANNEL_ID: process.env.MEMKRAFT_CHANNEL_ID?.trim() || "cursor-tuber-kit-global",
+        MEMKRAFT_AGENT_ID: config.memkraft.agentId,
+        MEMKRAFT_CHANNEL_ID: config.memkraft.channelId,
         MEMKRAFT_DIR: resolveMemKraftDir(),
       },
       stdio: ["pipe", "pipe", "pipe"],
@@ -156,7 +158,7 @@ async function runMemKraftCommand<T>(command: string, payload: unknown): Promise
 }
 
 function resolveMemKraftDir() {
-  const configured = process.env.MEMKRAFT_DIR?.trim()
+  const configured = readAppConfig().memkraft.dir.trim()
 
   if (configured) {
     return path.resolve(process.cwd(), configured)
@@ -170,7 +172,7 @@ function resolvePythonExecutable() {
     return cachedPythonExecutable
   }
 
-  const envOverride = process.env.MEMKRAFT_PYTHON_BIN?.trim()
+  const envOverride = readAppConfig().memkraft.pythonBin.trim()
 
   if (envOverride) {
     cachedPythonExecutable = envOverride
@@ -185,7 +187,7 @@ function resolvePythonExecutable() {
   }
 
   throw new MemKraftConfigurationError(
-    "Python 実行ファイルが見つかりません。python3 をインストールするか MEMKRAFT_PYTHON_BIN を設定してください。",
+    "Python 実行ファイルが見つかりません。python3 をインストールするか config/local.json の memkraft.pythonBin を設定してください。",
   )
 }
 

@@ -32,13 +32,13 @@ export type ChatSessionPayload = {
 
 export type ChatMetadataPayload = {
   characterAgentModel?: string
-  characterAgentModelSource?: "default" | "env"
+  characterAgentModelSource?: "default" | "config"
   characterState: CharacterStateMetadata
   provider: ChatProvider
   model: string
-  modelSource: "default" | "env"
+  modelSource: "default" | "config"
   emotionModel?: string
-  emotionModelSource?: "default" | "env"
+  emotionModelSource?: "default" | "config"
   supportsCharacterSubagents: boolean
   supportsProviderEmotion: boolean
   supportsProviderSessionReuse: boolean

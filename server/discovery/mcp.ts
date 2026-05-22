@@ -1,4 +1,5 @@
 import type { AutopilotDiscoverySnippet } from "../../shared/autopilot.js"
+import { readAppConfig } from "../appConfig.js"
 import { getCached } from "./cache.js"
 
 const FETCH_TIMEOUT_MS = 3000
@@ -9,12 +10,8 @@ const MAX_TOTAL_SNIPPETS = 6
 /**
  * Calls one or more MCP-compatible discovery endpoints.
  *
- * Endpoints are configured via either:
- *   - `MCP_DISCOVERY_URLS` (comma-separated list, recommended)
- *   - `MCP_DISCOVERY_URL`  (single URL, legacy, still honored)
- *
- * Both are merged and de-duplicated. The shared `MCP_DISCOVERY_TOKEN`
- * is applied as a Bearer token to all endpoints.
+ * Endpoints are configured via `mcp.discoveryUrls` in config/local.json.
+ * The env-only `MCP_DISCOVERY_TOKEN` is applied as a Bearer token to all endpoints.
  *
  * Each endpoint is expected to accept POST with `{ topic?: string }` and
  * respond with `{ snippets: [{ title, detail }] }`. Failures yield [].
@@ -38,12 +35,9 @@ export async function fetchMcpDiscoverySnippets(topic: string | null): Promise<A
 }
 
 function resolveEndpointUrls(): string[] {
-  const multi = process.env.MCP_DISCOVERY_URLS?.split(",") ?? []
-  const single = process.env.MCP_DISCOVERY_URL ? [process.env.MCP_DISCOVERY_URL] : []
-
   const seen = new Set<string>()
   const result: string[] = []
-  for (const raw of [...multi, ...single]) {
+  for (const raw of readAppConfig().mcp.discoveryUrls) {
     const trimmed = raw?.trim()
     if (!trimmed) continue
     if (seen.has(trimmed)) continue

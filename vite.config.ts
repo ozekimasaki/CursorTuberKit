@@ -1,8 +1,9 @@
 import react from "@vitejs/plugin-react"
 import { fileURLToPath } from "node:url"
 import { defineConfig } from "vite"
+import { loadAppConfig } from "./config/load-config.mjs"
 
-const backendPort = Number(process.env.PORT ?? 8787)
+const backendPort = loadAppConfig().server.port
 const reactPackageRoot = fileURLToPath(new URL("./node_modules/react", import.meta.url))
 const reactDomPackageRoot = fileURLToPath(new URL("./node_modules/react-dom", import.meta.url))
 

@@ -5,6 +5,7 @@ import type { CharacterArtifactsPayload } from "../shared/characterAgents.js"
 import type { FinalEmotionPayload } from "../shared/emotion.js"
 import type { ConversationTurn, MemKraftPromptContext } from "./aiCommon.js"
 import type { AiProvider } from "./aiProvider.js"
+import { readAppConfig } from "./appConfig.js"
 
 const MEMORY_ROOT = resolveMemoryRoot()
 const RUNTIME_DIR = path.join(MEMORY_ROOT, "runtime")
@@ -525,7 +526,7 @@ function mapArtifactFilesToRelativePaths() {
 }
 
 function resolveMemoryRoot() {
-  const configured = process.env.MEMKRAFT_DIR?.trim()
+  const configured = readAppConfig().memkraft.dir.trim()
   return path.resolve(process.cwd(), configured || "memory")
 }
 

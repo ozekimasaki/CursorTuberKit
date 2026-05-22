@@ -65,7 +65,6 @@ type SettingsModalProps = {
   onVoiceEnabledChange: (enabled: boolean) => void
   voicevoxHealth: VoicevoxHealth | null
   voiceSettings: ChatVoiceSettings
-  onVoiceSettingsChange: (patch: Partial<ChatVoiceSettings>) => void
   latestAutomationPolicy: AutomationPolicy
   latestModeration: ModerationAssessment | null
   chatSettings: ChatSettings
@@ -85,7 +84,11 @@ type SettingsModalProps = {
   ) => CharacterPreset | Promise<CharacterPreset | null> | null
   onCharacterStateReset: () => void | Promise<void>
   onChatMemoryClear: () => void | Promise<void>
-  onChatSettingsSave: (settings: ChatSettings) => void | Promise<void>
+  onAllSettingsSave: (settings: ChatSettings) => void | Promise<void>
+  onSettingsDiscard: () => void
+  settingsSaveBusy: boolean
+  settingsSaveNotice: string | null
+  uiSettingsDirty: boolean
   onPersonaAutoRewriteRequest: () => void | Promise<void>
   personaAutoRewriteBusy: boolean
   personaAutoRewriteNotice: string | null
@@ -121,7 +124,6 @@ export function SettingsModal(props: SettingsModalProps) {
     onVoiceEnabledChange,
     voicevoxHealth,
     voiceSettings,
-    onVoiceSettingsChange,
     latestAutomationPolicy,
     latestModeration,
     chatSettings,
@@ -138,7 +140,11 @@ export function SettingsModal(props: SettingsModalProps) {
     onCharacterPresetUpdate,
     onCharacterStateReset,
     onChatMemoryClear,
-    onChatSettingsSave,
+    onAllSettingsSave,
+    onSettingsDiscard,
+    settingsSaveBusy,
+    settingsSaveNotice,
+    uiSettingsDirty,
     onPersonaAutoRewriteRequest,
     personaAutoRewriteBusy,
     personaAutoRewriteNotice,
@@ -232,7 +238,8 @@ export function SettingsModal(props: SettingsModalProps) {
   const isCharacterDraftDirty = characterNameDraft !== chatSettings.characterName
   const isMemoryDirty =
     memoryModeDraft !== chatSettings.memory.mode || memoryPersistDraft !== chatSettings.memory.persistResponses
-  const isSettingsDirty = isCharacterDraftDirty || isMemoryDirty
+  const isVoiceDirty = JSON.stringify(voiceDraft) !== JSON.stringify(voiceSettings)
+  const isSettingsDirty = isCharacterDraftDirty || isMemoryDirty || isVoiceDirty || uiSettingsDirty
   const voiceSummary = voicevoxHealth
     ? voicevoxHealth.ok
       ? `接続中 · speaker ${voicevoxHealth.speaker}${voicevoxHealth.version ? ` · ${voicevoxHealth.version}` : ""}`
@@ -251,7 +258,6 @@ export function SettingsModal(props: SettingsModalProps) {
 
   function commitVoicePatch(patch: Partial<ChatVoiceSettings>) {
     setVoiceDraft((current) => ({ ...current, ...patch }))
-    onVoiceSettingsChange(patch)
   }
 
   function handleSpeakerStyleChange(rawId: string) {
@@ -274,7 +280,7 @@ export function SettingsModal(props: SettingsModalProps) {
   }
 
   function handleVoiceTuningCommit(key: "speedScale" | "pitchScale" | "intonationScale" | "volumeScale") {
-    onVoiceSettingsChange({ [key]: voiceDraft[key] })
+    void key
   }
 
   function handleVoiceReset() {
@@ -286,7 +292,6 @@ export function SettingsModal(props: SettingsModalProps) {
       volumeScale: defaults.volumeScale,
     }
     setVoiceDraft((current) => ({ ...current, ...patch }))
-    onVoiceSettingsChange(patch)
   }
 
   async function handlePresetCreate() {
@@ -344,7 +349,7 @@ export function SettingsModal(props: SettingsModalProps) {
   }
 
   async function saveDraftSettings() {
-    await onChatSettingsSave({
+    await onAllSettingsSave({
       ...chatSettings,
       characterName: characterNameDraft,
       characterFullPrompt: characterFullPromptDraft,
@@ -353,7 +358,18 @@ export function SettingsModal(props: SettingsModalProps) {
         mode: memoryModeDraft,
         persistResponses: memoryPersistDraft,
       },
+      voice: voiceDraft,
     })
+  }
+
+  function discardDraftSettings() {
+    setCharacterNameDraft(chatSettings.characterName)
+    setCharacterFullPromptDraft(chatSettings.characterFullPrompt)
+    setCharacterPromptDraft(chatSettings.characterPrompt)
+    setMemoryModeDraft(chatSettings.memory.mode)
+    setMemoryPersistDraft(chatSettings.memory.persistResponses)
+    setVoiceDraft(voiceSettings)
+    onSettingsDiscard()
   }
 
   function resetDraftToDefaults() {
@@ -435,16 +451,6 @@ export function SettingsModal(props: SettingsModalProps) {
               <p className="card__hint card__hint--compact">
                 ※ 短い人格プロンプトと詳細人格プロンプトの実体は .cursor/rules の専用ファイルにあります。AI が直近の会話を踏まえて自動で書き換え、この画面では読み取り専用で表示します。
               </p>
-              <div className="composer__actions">
-                <button
-                  className="btn btn--primary"
-                  type="button"
-                  onClick={() => void saveDraftSettings()}
-                  disabled={chatSettingsBusy || characterPresetBusy || !isSettingsDirty}
-                >
-                  {chatSettingsBusy ? "保存中…" : "名前を保存"}
-                </button>
-              </div>
               {chatSettingsNotice && !chatSettingsNotice.includes("Current Hidden State") && (
                 <div className="notice notice--ok">
                   <p className="notice__text">{chatSettingsNotice}</p>
@@ -549,14 +555,6 @@ export function SettingsModal(props: SettingsModalProps) {
                 </label>
               </div>
               <div className="composer__actions">
-                <button
-                  className="btn btn--primary"
-                  type="button"
-                  onClick={() => void saveDraftSettings()}
-                  disabled={chatSettingsBusy || characterPresetBusy || !isSettingsDirty}
-                >
-                  {chatSettingsBusy ? "保存中…" : "保存"}
-                </button>
                 <button
                   className="btn btn--danger"
                   type="button"
@@ -875,7 +873,7 @@ export function SettingsModal(props: SettingsModalProps) {
                 <div>
                   <p className="card__title">OBS Browser Source (?view=stage)</p>
                   <p className="card__hint card__hint--compact">
-                    別タブ・OBS に読み込んだステージ表示で何を出すかを切り替えます。設定は localStorage で同期されます。
+                    別タブ・OBS に読み込んだステージ表示で何を出すかを切り替えます。設定は保存時に JSON へ反映されます。
                   </p>
                 </div>
               </div>
@@ -1111,17 +1109,46 @@ export function SettingsModal(props: SettingsModalProps) {
           </section>
           </div>
         </div>
+        <footer className="settings-modal__savebar">
+          <div>
+            <p className="settings-modal__savebar-title">
+              {isSettingsDirty ? "未保存の変更があります" : "すべて保存済み"}
+            </p>
+            <p className="settings-modal__savebar-hint">
+              変更は保存ボタンを押した時に memory/runtime/app-settings.json へ反映されます。
+            </p>
+            {settingsSaveNotice && <p className="settings-modal__savebar-hint">{settingsSaveNotice}</p>}
+          </div>
+          <div className="settings-modal__savebar-actions">
+            <button
+              className="btn btn--secondary"
+              type="button"
+              onClick={discardDraftSettings}
+              disabled={settingsSaveBusy || !isSettingsDirty}
+            >
+              変更を破棄
+            </button>
+            <button
+              className="btn btn--primary"
+              type="button"
+              onClick={() => void saveDraftSettings()}
+              disabled={settingsSaveBusy || !isSettingsDirty}
+            >
+              {settingsSaveBusy ? "保存中…" : "保存"}
+            </button>
+          </div>
+        </footer>
       </div>
     </div>
   )
 }
 
 const SETTINGS_NAV = [
-  { id: "section-character", label: "キャラクター" },
-  { id: "section-avatar", label: "アバター" },
-  { id: "section-stage", label: "ステージ表示" },
-  { id: "section-voice", label: "音声" },
-  { id: "section-stream", label: "ストリーム" },
+  { id: "section-character", label: "Profile" },
+  { id: "section-voice", label: "Voice" },
+  { id: "section-avatar", label: "Avatar & Stage" },
+  { id: "section-stage", label: "Stage View" },
+  { id: "section-stream", label: "Memory & Behavior" },
   { id: "section-about", label: "詳細" },
 ] as const
 
@@ -1402,5 +1429,3 @@ function VoiceTuningRow({ label, rangeKey, value, step, onInput, onCommit }: Voi
     </div>
   )
 }
-
-

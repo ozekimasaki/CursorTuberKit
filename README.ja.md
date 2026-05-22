@@ -39,7 +39,12 @@ npm install
 Copy-Item .env.example .env
 ```
 
-`.env.example` を元に Cursor API key などを設定してください。`AI_PROVIDER` は `cursor` のままで使います。
+`.env` は secret とプロセス環境値だけに使います。通常設定は `config/defaults.json` と、必要に応じて `config/local.example.json` からコピーした `config/local.json` に書きます。
+
+- `.env`: `CURSOR_API_KEY`, Kick credentials, MCP token などの secret
+- `config/local.json`: ports、Cursor model、VOICEVOX URL/container、MemKraft、automation、MCP discovery URLs
+
+このプロジェクトは Cursor 専用です。provider 切替設定はありません。
 
 ## 開発コマンド
 

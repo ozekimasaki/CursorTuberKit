@@ -7,6 +7,7 @@ dist/
 *.log
 .DS_Store
 memory/
+config/local.json
 .cursor/hook-state/
 .cursor/runtime/
 .cursor/tmp-max-response.json

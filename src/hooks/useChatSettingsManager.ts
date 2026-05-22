@@ -85,6 +85,7 @@ export function useChatSettingsManager({ showError, syncRuntimeStatus }: UseChat
           characterFullPrompt: nextSettings.characterFullPrompt,
           characterPrompt: nextSettings.characterPrompt,
           memory: nextSettings.memory,
+          voice: nextSettings.voice,
         })
         setChatSettings(saved)
         setChatSettingsNotice("キャラクター名・長期記憶設定を保存しました。")

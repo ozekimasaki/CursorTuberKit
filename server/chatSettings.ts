@@ -1,96 +1,21 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
-import path from "node:path"
 import {
   applyChatSettingsPatch,
-  createDefaultChatSettings,
-  normalizeChatSettings,
   type ChatSettings,
   type ChatSettingsPatch,
 } from "../shared/chatSettings.js"
+import { readAppSettings, updateAppSettings } from "./appSettings.js"
 import { readCharacterRuleSource } from "./characterRuleSource.js"
 
-const CHAT_SETTINGS_FILE = path.resolve(process.cwd(), "memory", "runtime", "chat-settings.json")
-
-let cachedSettings: ChatSettings | null = null
-let settingsWriteQueue = Promise.resolve()
-
 export async function readChatSettings(): Promise<ChatSettings> {
-  if (cachedSettings) {
-    return applyCharacterRulePrompts(cachedSettings)
-  }
-
-  try {
-    const raw = await readFile(CHAT_SETTINGS_FILE, "utf8")
-    const parsed = JSON.parse(raw) as unknown
-    const normalized = normalizeChatSettings(parsed)
-    const seeded = seedVoiceFromEnvIfMissing(normalized, parsed)
-    cachedSettings = seeded.settings
-    if (seeded.shouldPersist) {
-      await writeChatSettingsFile(cachedSettings)
-    }
-  } catch {
-    const defaults = createDefaultChatSettings()
-    cachedSettings = applyEnvSpeakerSeed(defaults)
-    await writeChatSettingsFile(cachedSettings)
-  }
-
-  return applyCharacterRulePrompts(cachedSettings)
+  const settings = await readAppSettings()
+  return applyCharacterRulePrompts(settings.chatSettings)
 }
 
 export async function updateChatSettings(patch: ChatSettingsPatch): Promise<ChatSettings> {
   const current = await readChatSettings()
   const next = applyChatSettingsPatch(current, patch)
-  return persistChatSettings(next)
-}
-
-function seedVoiceFromEnvIfMissing(
-  settings: ChatSettings,
-  raw: unknown,
-): { settings: ChatSettings; shouldPersist: boolean } {
-  const hadVoice = isRecord(raw) && isRecord((raw as Record<string, unknown>).voice)
-  if (hadVoice) {
-    return { settings, shouldPersist: false }
-  }
-
-  const seeded = applyEnvSpeakerSeed(settings)
-  return { settings: seeded, shouldPersist: true }
-}
-
-function applyEnvSpeakerSeed(settings: ChatSettings): ChatSettings {
-  const envSpeaker = readEnvSpeakerId()
-  if (envSpeaker == null) {
-    return settings
-  }
-  return {
-    ...settings,
-    voice: { ...settings.voice, speakerId: envSpeaker },
-  }
-}
-
-function readEnvSpeakerId(): number | null {
-  const raw = process.env.VOICEVOX_SPEAKER
-  if (raw == null || raw === "") return null
-  const parsed = Number(raw)
-  if (!Number.isInteger(parsed) || parsed < 0) return null
-  return parsed
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null
-}
-
-async function persistChatSettings(settings: ChatSettings) {
-  cachedSettings = copyChatSettings(settings)
-  settingsWriteQueue = settingsWriteQueue.then(() => writeChatSettingsFile(settings))
-  await settingsWriteQueue
-  return copyChatSettings(settings)
-}
-
-async function writeChatSettingsFile(settings: ChatSettings) {
-  await mkdir(path.dirname(CHAT_SETTINGS_FILE), { recursive: true })
-  const tempFile = `${CHAT_SETTINGS_FILE}.tmp`
-  await writeFile(tempFile, `${JSON.stringify(settings, null, 2)}\n`, "utf8")
-  await rename(tempFile, CHAT_SETTINGS_FILE)
+  const saved = await updateAppSettings({ chatSettings: next })
+  return copyChatSettings(saved.chatSettings)
 }
 
 function copyChatSettings(settings: ChatSettings): ChatSettings {
