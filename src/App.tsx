@@ -218,6 +218,7 @@ export function App() {
     handleCharacterPresetUpdate,
     handleCharacterStateReset,
     handleChatSettingsSave,
+    handleVoiceSettingsChange,
     setChatSettings,
   } = useChatSettingsManager({ showError, syncRuntimeStatus })
 
@@ -2085,6 +2086,8 @@ export function App() {
         voiceEnabled={voiceEnabled}
         onVoiceEnabledChange={setVoiceEnabled}
         voicevoxHealth={voicevoxHealth}
+        voiceSettings={chatSettings.voice}
+        onVoiceSettingsChange={handleVoiceSettingsChange}
         latestAutomationPolicy={latestAutomationEnvelope?.policy ?? platformState.automationPolicy}
         latestModeration={latestModeration}
         chatSettings={chatSettings}

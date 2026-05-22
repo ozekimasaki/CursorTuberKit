@@ -21,9 +21,16 @@ export async function readChatSettings(): Promise<ChatSettings> {
 
   try {
     const raw = await readFile(CHAT_SETTINGS_FILE, "utf8")
-    cachedSettings = normalizeChatSettings(JSON.parse(raw))
+    const parsed = JSON.parse(raw) as unknown
+    const normalized = normalizeChatSettings(parsed)
+    const seeded = seedVoiceFromEnvIfMissing(normalized, parsed)
+    cachedSettings = seeded.settings
+    if (seeded.shouldPersist) {
+      await writeChatSettingsFile(cachedSettings)
+    }
   } catch {
-    cachedSettings = createDefaultChatSettings()
+    const defaults = createDefaultChatSettings()
+    cachedSettings = applyEnvSpeakerSeed(defaults)
     await writeChatSettingsFile(cachedSettings)
   }
 
@@ -34,6 +41,42 @@ export async function updateChatSettings(patch: ChatSettingsPatch): Promise<Chat
   const current = await readChatSettings()
   const next = applyChatSettingsPatch(current, patch)
   return persistChatSettings(next)
+}
+
+function seedVoiceFromEnvIfMissing(
+  settings: ChatSettings,
+  raw: unknown,
+): { settings: ChatSettings; shouldPersist: boolean } {
+  const hadVoice = isRecord(raw) && isRecord((raw as Record<string, unknown>).voice)
+  if (hadVoice) {
+    return { settings, shouldPersist: false }
+  }
+
+  const seeded = applyEnvSpeakerSeed(settings)
+  return { settings: seeded, shouldPersist: true }
+}
+
+function applyEnvSpeakerSeed(settings: ChatSettings): ChatSettings {
+  const envSpeaker = readEnvSpeakerId()
+  if (envSpeaker == null) {
+    return settings
+  }
+  return {
+    ...settings,
+    voice: { ...settings.voice, speakerId: envSpeaker },
+  }
+}
+
+function readEnvSpeakerId(): number | null {
+  const raw = process.env.VOICEVOX_SPEAKER
+  if (raw == null || raw === "") return null
+  const parsed = Number(raw)
+  if (!Number.isInteger(parsed) || parsed < 0) return null
+  return parsed
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null
 }
 
 async function persistChatSettings(settings: ChatSettings) {
@@ -64,6 +107,7 @@ function copyChatSettings(settings: ChatSettings): ChatSettings {
       mode: settings.memory.mode,
       persistResponses: settings.memory.persistResponses,
     },
+    voice: { ...settings.voice },
     schemaVersion: settings.schemaVersion,
   }
 }

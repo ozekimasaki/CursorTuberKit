@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useState } from "react"
 
 import type { CharacterPreset, CharacterPresetInput } from "../../shared/characterPresets"
-import { createDefaultChatSettings, type ChatSettings } from "../../shared/chatSettings"
+import {
+  createDefaultChatSettings,
+  type ChatSettings,
+  type ChatVoiceSettings,
+} from "../../shared/chatSettings"
 import { normalizeCharacterSinValues } from "../../shared/characterState"
 import {
   clearChatMemory,
@@ -207,6 +211,27 @@ export function useChatSettingsManager({ showError, syncRuntimeStatus }: UseChat
     }
   }, [showError, syncRuntimeStatus])
 
+  const handleVoiceSettingsChange = useCallback(
+    async (patch: Partial<ChatVoiceSettings>) => {
+      if (!patch || Object.keys(patch).length === 0) return
+      // Optimistic local update so the UI reflects the change immediately.
+      setChatSettings((current) => ({
+        ...current,
+        voice: { ...current.voice, ...patch },
+      }))
+
+      try {
+        const saved = await updateChatSettings({ voice: patch })
+        setChatSettings(saved)
+      } catch (error) {
+        if (!isAbortError(error)) {
+          showError(error instanceof Error ? error.message : "音声設定の保存に失敗しました。")
+        }
+      }
+    },
+    [showError],
+  )
+
   return {
     characterPresetBusy,
     characterPresetNotice,
@@ -220,6 +245,7 @@ export function useChatSettingsManager({ showError, syncRuntimeStatus }: UseChat
     handleCharacterPresetDelete,
     handleCharacterPresetUpdate,
     handleChatSettingsSave,
+    handleVoiceSettingsChange,
     setChatSettings,
     setChatSettingsNotice,
     setCharacterPresetNotice,

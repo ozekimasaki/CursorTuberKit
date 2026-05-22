@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { X as LucideX } from "lucide-react"
 import { describeAutomationExecutionLevel, type AutomationPolicy } from "../../shared/automation"
 import {
@@ -8,18 +8,25 @@ import {
 } from "../../shared/characterPresets"
 import {
   createDefaultChatSettings,
+  createDefaultVoiceSettings,
   maxCharacterFullPromptLength,
   maxCharacterNameLength,
   maxCharacterPromptLength,
   renderCharacterFullPrompt,
+  voiceTuningRanges,
   type ChatSettings,
+  type ChatVoiceSettings,
 } from "../../shared/chatSettings"
 import type { CharacterRuleStatus } from "../../shared/characterRules"
 import { characterProfile, characterProfileHighlights } from "../../shared/characterProfile"
 import { characterSinNames, type CharacterSinName, type CharacterSinValues } from "../../shared/characterState"
 import type { ModerationAssessment } from "../../shared/moderation"
 import { svgCharacterChoices, type AvatarMode, type MotionPngAssetStatus, type MotionPngSettings, type SvgAvatarSettings, type SvgCharacterId } from "../lib/avatarConfig"
-import { type VoicevoxHealth } from "../lib/voicevox"
+import {
+  fetchVoicevoxSpeakers,
+  type VoicevoxHealth,
+  type VoicevoxSpeakerGroup,
+} from "../lib/voicevox"
 import type { StageCaptionStyle, StageDisplayPreferences } from "../lib/stagePreferences"
 import { defaultStageCaptionStyle } from "../lib/stagePreferences"
 import { captionFontOptions, loadCaptionFont } from "../lib/googleFonts"
@@ -57,6 +64,8 @@ type SettingsModalProps = {
   voiceEnabled: boolean
   onVoiceEnabledChange: (enabled: boolean) => void
   voicevoxHealth: VoicevoxHealth | null
+  voiceSettings: ChatVoiceSettings
+  onVoiceSettingsChange: (patch: Partial<ChatVoiceSettings>) => void
   latestAutomationPolicy: AutomationPolicy
   latestModeration: ModerationAssessment | null
   chatSettings: ChatSettings
@@ -111,6 +120,8 @@ export function SettingsModal(props: SettingsModalProps) {
     voiceEnabled,
     onVoiceEnabledChange,
     voicevoxHealth,
+    voiceSettings,
+    onVoiceSettingsChange,
     latestAutomationPolicy,
     latestModeration,
     chatSettings,
@@ -141,6 +152,46 @@ export function SettingsModal(props: SettingsModalProps) {
   const [selectedPresetId, setSelectedPresetId] = useState("")
   const [memoryModeDraft, setMemoryModeDraft] = useState(chatSettings.memory.mode)
   const [memoryPersistDraft, setMemoryPersistDraft] = useState(chatSettings.memory.persistResponses)
+  const [voiceDraft, setVoiceDraft] = useState<ChatVoiceSettings>(voiceSettings)
+  const [speakerGroups, setSpeakerGroups] = useState<VoicevoxSpeakerGroup[] | null>(null)
+  const [speakerError, setSpeakerError] = useState<string | null>(null)
+  const [speakerLoading, setSpeakerLoading] = useState(false)
+  const [speakerReloadKey, setSpeakerReloadKey] = useState(0)
+
+  useEffect(() => {
+    setVoiceDraft(voiceSettings)
+  }, [voiceSettings])
+
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    const controller = new AbortController()
+    setSpeakerLoading(true)
+    setSpeakerError(null)
+    fetchVoicevoxSpeakers(controller.signal)
+      .then((groups) => {
+        if (cancelled) return
+        setSpeakerGroups(groups)
+      })
+      .catch((error: unknown) => {
+        if (cancelled || controller.signal.aborted) return
+        setSpeakerError(error instanceof Error ? error.message : "VOICEVOX話者一覧の取得に失敗しました。")
+      })
+      .finally(() => {
+        if (!cancelled) setSpeakerLoading(false)
+      })
+    return () => {
+      cancelled = true
+      controller.abort()
+    }
+  }, [open, speakerReloadKey])
+
+  const selectedSpeakerGroup = useMemo(() => {
+    if (!speakerGroups) return null
+    return (
+      speakerGroups.find((group) => group.styles.some((style) => style.id === voiceDraft.speakerId)) ?? null
+    )
+  }, [speakerGroups, voiceDraft.speakerId])
 
   useEffect(() => {
     setCharacterNameDraft(chatSettings.characterName)
@@ -196,6 +247,46 @@ export function SettingsModal(props: SettingsModalProps) {
       characterName: characterNameDraft,
       characterPrompt: characterPromptDraft,
     }
+  }
+
+  function commitVoicePatch(patch: Partial<ChatVoiceSettings>) {
+    setVoiceDraft((current) => ({ ...current, ...patch }))
+    onVoiceSettingsChange(patch)
+  }
+
+  function handleSpeakerStyleChange(rawId: string) {
+    const id = Number(rawId)
+    if (!Number.isInteger(id) || id < 0) return
+    commitVoicePatch({ speakerId: id })
+  }
+
+  function handleSpeakerCharacterChange(speakerUuid: string) {
+    if (!speakerGroups) return
+    const group = speakerGroups.find((g) => g.speakerUuid === speakerUuid)
+    if (!group || group.styles.length === 0) return
+    commitVoicePatch({ speakerId: group.styles[0].id })
+  }
+
+  function handleVoiceTuningChange(key: "speedScale" | "pitchScale" | "intonationScale" | "volumeScale", raw: string) {
+    const value = Number(raw)
+    if (!Number.isFinite(value)) return
+    setVoiceDraft((current) => ({ ...current, [key]: value }))
+  }
+
+  function handleVoiceTuningCommit(key: "speedScale" | "pitchScale" | "intonationScale" | "volumeScale") {
+    onVoiceSettingsChange({ [key]: voiceDraft[key] })
+  }
+
+  function handleVoiceReset() {
+    const defaults = createDefaultVoiceSettings()
+    const patch: Partial<ChatVoiceSettings> = {
+      speedScale: defaults.speedScale,
+      pitchScale: defaults.pitchScale,
+      intonationScale: defaults.intonationScale,
+      volumeScale: defaults.volumeScale,
+    }
+    setVoiceDraft((current) => ({ ...current, ...patch }))
+    onVoiceSettingsChange(patch)
   }
 
   async function handlePresetCreate() {
@@ -850,6 +941,108 @@ export function SettingsModal(props: SettingsModalProps) {
                   {voiceSummary}
                 </span>
               </div>
+              <div className="card__row">
+                <span className="card__key">キャラ</span>
+                <select
+                  className="field__input"
+                  style={{ flex: "0 0 220px", minHeight: 32 }}
+                  value={selectedSpeakerGroup?.speakerUuid ?? ""}
+                  disabled={speakerLoading || !speakerGroups || speakerGroups.length === 0}
+                  onChange={(e) => handleSpeakerCharacterChange(e.target.value)}
+                >
+                  {!selectedSpeakerGroup && (
+                    <option value="">
+                      {speakerLoading
+                        ? "読み込み中..."
+                        : speakerError
+                        ? "—"
+                        : `(speaker ${voiceDraft.speakerId})`}
+                    </option>
+                  )}
+                  {speakerGroups?.map((group) => (
+                    <option key={group.speakerUuid || group.name} value={group.speakerUuid}>
+                      {group.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="card__row">
+                <span className="card__key">スタイル</span>
+                <select
+                  className="field__input"
+                  style={{ flex: "0 0 220px", minHeight: 32 }}
+                  value={String(voiceDraft.speakerId)}
+                  disabled={!selectedSpeakerGroup}
+                  onChange={(e) => handleSpeakerStyleChange(e.target.value)}
+                >
+                  {!selectedSpeakerGroup && <option value="">—</option>}
+                  {selectedSpeakerGroup?.styles.map((style) => (
+                    <option key={style.id} value={String(style.id)}>
+                      {style.name}
+                      {style.type && style.type !== "talk" ? ` (${style.type})` : ""} · #{style.id}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {speakerError && (
+                <div className="card__row">
+                  <span className="card__key">話者一覧</span>
+                  <span className="card__val card__val--warn" style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    取得失敗
+                    <button
+                      type="button"
+                      className="btn btn--ghost"
+                      style={{ minHeight: 28, padding: "0 10px" }}
+                      onClick={() => setSpeakerReloadKey((n) => n + 1)}
+                    >
+                      再試行
+                    </button>
+                  </span>
+                </div>
+              )}
+              <VoiceTuningRow
+                label="話速"
+                rangeKey="speedScale"
+                value={voiceDraft.speedScale}
+                step={0.01}
+                onInput={handleVoiceTuningChange}
+                onCommit={handleVoiceTuningCommit}
+              />
+              <VoiceTuningRow
+                label="ピッチ"
+                rangeKey="pitchScale"
+                value={voiceDraft.pitchScale}
+                step={0.005}
+                onInput={handleVoiceTuningChange}
+                onCommit={handleVoiceTuningCommit}
+              />
+              <VoiceTuningRow
+                label="抑揚"
+                rangeKey="intonationScale"
+                value={voiceDraft.intonationScale}
+                step={0.01}
+                onInput={handleVoiceTuningChange}
+                onCommit={handleVoiceTuningCommit}
+              />
+              <VoiceTuningRow
+                label="音量"
+                rangeKey="volumeScale"
+                value={voiceDraft.volumeScale}
+                step={0.01}
+                onInput={handleVoiceTuningChange}
+                onCommit={handleVoiceTuningCommit}
+              />
+              <div className="card__row">
+                <span className="card__key">調整</span>
+                <button
+                  type="button"
+                  className="btn btn--ghost"
+                  style={{ minHeight: 28, padding: "0 12px" }}
+                  onClick={handleVoiceReset}
+                >
+                  既定値に戻す
+                </button>
+              </div>
             </div>
           </section>
 
@@ -1156,6 +1349,55 @@ function CaptionStyleEditor({ style, disabled, onChange }: CaptionStyleEditorPro
         >
           既定値に戻す
         </button>
+      </div>
+    </div>
+  )
+}
+
+type VoiceTuningRowProps = {
+  label: string
+  rangeKey: "speedScale" | "pitchScale" | "intonationScale" | "volumeScale"
+  value: number
+  step: number
+  onInput: (key: VoiceTuningRowProps["rangeKey"], rawValue: string) => void
+  onCommit: (key: VoiceTuningRowProps["rangeKey"]) => void
+}
+
+function VoiceTuningRow({ label, rangeKey, value, step, onInput, onCommit }: VoiceTuningRowProps) {
+  const range = voiceTuningRanges[rangeKey]
+  return (
+    <div className="card__row">
+      <span className="card__key">{label}</span>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flex: "0 0 240px" }}>
+        <input
+          type="range"
+          className="field__input field__input--range"
+          min={range.min}
+          max={range.max}
+          step={step}
+          value={value}
+          onChange={(e) => onInput(rangeKey, e.target.value)}
+          onMouseUp={() => onCommit(rangeKey)}
+          onTouchEnd={() => onCommit(rangeKey)}
+          onKeyUp={(e) => {
+            if (
+              e.key === "ArrowLeft" ||
+              e.key === "ArrowRight" ||
+              e.key === "ArrowUp" ||
+              e.key === "ArrowDown" ||
+              e.key === "Home" ||
+              e.key === "End" ||
+              e.key === "PageUp" ||
+              e.key === "PageDown"
+            ) {
+              onCommit(rangeKey)
+            }
+          }}
+          style={{ flex: 1, minWidth: 140 }}
+        />
+        <span className="card__val" style={{ minWidth: 48, textAlign: "right" }}>
+          {value.toFixed(2)}
+        </span>
       </div>
     </div>
   )

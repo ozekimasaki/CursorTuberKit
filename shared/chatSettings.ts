@@ -1,13 +1,31 @@
 import { characterProfile } from "./characterProfile.js"
 import { characterSinNames, normalizeCharacterSinValues, type CharacterSinName } from "./characterState.js"
 
-export const chatSettingsSchemaVersion = 4 as const
+export const chatSettingsSchemaVersion = 5 as const
 export const chatMemoryModes = ["curated", "full", "off"] as const
 export const maxCharacterNameLength = 80
 export const maxCharacterPromptLength = 2400
 export const maxCharacterFullPromptLength = 12000
 
+export const voiceTuningRanges = {
+  speedScale: { min: 0.5, max: 2.0, default: 1.08 },
+  pitchScale: { min: -0.15, max: 0.15, default: 0.02 },
+  intonationScale: { min: 0, max: 2, default: 1.15 },
+  volumeScale: { min: 0, max: 2, default: 1 },
+} as const
+
+export const defaultVoiceSpeakerId = 1
+export const maxVoiceSpeakerId = 1_000_000
+
 export type ChatMemoryMode = (typeof chatMemoryModes)[number]
+
+export type ChatVoiceSettings = {
+  speakerId: number
+  speedScale: number
+  pitchScale: number
+  intonationScale: number
+  volumeScale: number
+}
 
 export type ChatSettings = {
   characterName: string
@@ -20,6 +38,7 @@ export type ChatSettings = {
     mode: ChatMemoryMode
     persistResponses: boolean
   }
+  voice: ChatVoiceSettings
   schemaVersion: typeof chatSettingsSchemaVersion
 }
 
@@ -34,6 +53,7 @@ export type ChatSettingsPatch = {
     mode?: ChatMemoryMode
     persistResponses?: boolean
   }
+  voice?: Partial<ChatVoiceSettings>
 }
 
 export function createDefaultChatSettings(): ChatSettings {
@@ -48,7 +68,18 @@ export function createDefaultChatSettings(): ChatSettings {
       mode: "curated",
       persistResponses: true,
     },
+    voice: createDefaultVoiceSettings(),
     schemaVersion: chatSettingsSchemaVersion,
+  }
+}
+
+export function createDefaultVoiceSettings(): ChatVoiceSettings {
+  return {
+    speakerId: defaultVoiceSpeakerId,
+    speedScale: voiceTuningRanges.speedScale.default,
+    pitchScale: voiceTuningRanges.pitchScale.default,
+    intonationScale: voiceTuningRanges.intonationScale.default,
+    volumeScale: voiceTuningRanges.volumeScale.default,
   }
 }
 
@@ -143,7 +174,46 @@ export function parseChatSettingsPatch(value: unknown): ChatSettingsPatch | null
     patch.memory = memoryPatch
   }
 
+  if ("voice" in value) {
+    if (!isRecord(value.voice)) {
+      return null
+    }
+
+    const voicePatch: Partial<ChatVoiceSettings> = {}
+
+    if ("speakerId" in value.voice) {
+      if (!isValidSpeakerId(value.voice.speakerId)) {
+        return null
+      }
+      voicePatch.speakerId = value.voice.speakerId
+    }
+
+    for (const key of ["speedScale", "pitchScale", "intonationScale", "volumeScale"] as const) {
+      if (!(key in value.voice)) continue
+      const raw = value.voice[key]
+      if (typeof raw !== "number" || !Number.isFinite(raw)) {
+        return null
+      }
+      const range = voiceTuningRanges[key]
+      if (raw < range.min || raw > range.max) {
+        return null
+      }
+      voicePatch[key] = raw
+    }
+
+    patch.voice = voicePatch
+  }
+
   return patch
+}
+
+function isValidSpeakerId(value: unknown): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= 0 &&
+    value <= maxVoiceSpeakerId
+  )
 }
 
 export function applyChatSettingsPatch(base: ChatSettings, patch: ChatSettingsPatch): ChatSettings {
@@ -161,8 +231,40 @@ export function applyChatSettingsPatch(base: ChatSettings, patch: ChatSettingsPa
       mode: patch.memory?.mode ?? base.memory.mode,
       persistResponses: patch.memory?.persistResponses ?? base.memory.persistResponses,
     },
+    voice: mergeVoiceSettings(base.voice, patch.voice),
     schemaVersion: chatSettingsSchemaVersion,
   }
+}
+
+function mergeVoiceSettings(
+  base: ChatVoiceSettings,
+  patch: Partial<ChatVoiceSettings> | undefined,
+): ChatVoiceSettings {
+  const merged: ChatVoiceSettings = {
+    speakerId: patch?.speakerId ?? base.speakerId,
+    speedScale: patch?.speedScale ?? base.speedScale,
+    pitchScale: patch?.pitchScale ?? base.pitchScale,
+    intonationScale: patch?.intonationScale ?? base.intonationScale,
+    volumeScale: patch?.volumeScale ?? base.volumeScale,
+  }
+  return normalizeVoiceSettings(merged)
+}
+
+export function normalizeVoiceSettings(value: unknown): ChatVoiceSettings {
+  const fallback = createDefaultVoiceSettings()
+  if (!isRecord(value)) return fallback
+
+  const speakerId = isValidSpeakerId(value.speakerId) ? value.speakerId : fallback.speakerId
+  const result: ChatVoiceSettings = { ...fallback, speakerId }
+
+  for (const key of ["speedScale", "pitchScale", "intonationScale", "volumeScale"] as const) {
+    const raw = value[key]
+    const range = voiceTuningRanges[key]
+    if (typeof raw === "number" && Number.isFinite(raw)) {
+      result[key] = Math.min(range.max, Math.max(range.min, raw))
+    }
+  }
+  return result
 }
 
 export function normalizeChatSettings(value: unknown): ChatSettings {
@@ -200,6 +302,7 @@ export function normalizeChatSettings(value: unknown): ChatSettings {
           ? memory.persistResponses
           : fallback.memory.persistResponses,
     },
+    voice: normalizeVoiceSettings(isRecord(value.voice) ? value.voice : fallback.voice),
     schemaVersion: chatSettingsSchemaVersion,
   }
 }

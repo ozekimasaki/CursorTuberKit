@@ -37,7 +37,7 @@ import {
 } from "./memkraft.js"
 import { PlatformChatOrchestrator } from "./platformChatOrchestrator.js"
 import { RuntimeStatusTracker } from "./runtimeStatus.js"
-import { getVoicevoxHealth, synthesizeVoice, VoicevoxError } from "./voicevox.js"
+import { fetchVoicevoxSpeakers, getVoicevoxHealth, synthesizeVoice, VoicevoxError } from "./voicevox.js"
 import { AutopilotPlannerError, runAutopilotPlanner } from "./autopilotPlanner.js"
 import { PersonaCuratorError, runPersonaCurator } from "./personaCurator.js"
 import type { PersonaAutoRewriteRequestBody, PersonaAutoRewriteResponse } from "../shared/personaCurator.js"
@@ -187,9 +187,24 @@ app.get("/api/voicevox/health", async (_request, response) => {
   const timeout = setTimeout(() => abortController.abort(), 3000)
 
   try {
-    const health = await getVoicevoxHealth(abortController.signal)
+    const settings = await readChatSettings().catch(() => null)
+    const health = await getVoicevoxHealth(abortController.signal, settings?.voice)
     runtimeStatusTracker.recordVoicevoxHealth(health)
     response.json(health)
+  } finally {
+    clearTimeout(timeout)
+  }
+})
+
+app.get("/api/voicevox/speakers", async (_request, response) => {
+  const abortController = new AbortController()
+  const timeout = setTimeout(() => abortController.abort(), 5000)
+
+  try {
+    const groups = await fetchVoicevoxSpeakers(abortController.signal)
+    response.json({ groups })
+  } catch (error) {
+    response.status(error instanceof VoicevoxError ? 502 : 500).json({ error: getErrorMessage(error) })
   } finally {
     clearTimeout(timeout)
   }
@@ -264,7 +279,8 @@ app.post(
     })
 
     try {
-      const wav = await synthesizeVoice({ signal: abortController.signal, text })
+      const settings = await readChatSettings().catch(() => null)
+      const wav = await synthesizeVoice({ signal: abortController.signal, text, voice: settings?.voice })
 
       if (!abortController.signal.aborted) {
         streamCompleted = true

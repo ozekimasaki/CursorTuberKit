@@ -5,6 +5,18 @@ export type VoicevoxHealth = {
   version: string | null
 }
 
+export type VoicevoxSpeakerStyle = {
+  id: number
+  name: string
+  type?: string
+}
+
+export type VoicevoxSpeakerGroup = {
+  name: string
+  speakerUuid: string
+  styles: VoicevoxSpeakerStyle[]
+}
+
 export async function fetchVoicevoxHealth(signal?: AbortSignal): Promise<VoicevoxHealth> {
   const response = await fetch("/api/voicevox/health", { signal })
 
@@ -13,6 +25,17 @@ export async function fetchVoicevoxHealth(signal?: AbortSignal): Promise<Voicevo
   }
 
   return (await response.json()) as VoicevoxHealth
+}
+
+export async function fetchVoicevoxSpeakers(signal?: AbortSignal): Promise<VoicevoxSpeakerGroup[]> {
+  const response = await fetch("/api/voicevox/speakers", { signal })
+
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response))
+  }
+
+  const body = (await response.json()) as { groups?: VoicevoxSpeakerGroup[] }
+  return Array.isArray(body.groups) ? body.groups : []
 }
 
 export async function synthesizeVoice(text: string, signal: AbortSignal): Promise<Blob> {
