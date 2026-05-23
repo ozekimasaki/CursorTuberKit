@@ -6,7 +6,7 @@ import { createCursorLocalOptions } from "./cursorLocalOptions.js"
 import { disposeAgentSafely, extractJsonObject, withTimeout } from "./cursorAgentUtils.js"
 
 const MUTATION_AGENT_NAME = "light-mutator"
-const MUTATION_TIMEOUT_MS = 15000
+const MUTATION_TIMEOUT_MS = 25000
 
 export type LiveMutationResult = {
   characterPrompt: string

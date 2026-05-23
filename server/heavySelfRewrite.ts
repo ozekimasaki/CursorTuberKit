@@ -6,7 +6,7 @@ import { createCursorLocalOptions } from "./cursorLocalOptions.js"
 import { disposeAgentSafely, extractJsonObject, withTimeout } from "./cursorAgentUtils.js"
 
 const HEAVY_MUTATOR_NAME = "heavy-mutator"
-const HEAVY_TIMEOUT_MS = 25000
+const HEAVY_TIMEOUT_MS = 35000
 
 export type HeavyMutationResult = {
   characterPrompt: string

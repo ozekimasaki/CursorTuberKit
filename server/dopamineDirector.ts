@@ -1,28 +1,15 @@
 import { Agent } from "@cursor/sdk"
-import { collectCursorRun } from "./cursorSdkRun.js"
-import { validateCursorConfiguration } from "./cursorAgent.js"
 import type { DirectorDecision, MutationCue } from "../shared/dopamineMutation.js"
-
-let directorAgent: Awaited<ReturnType<typeof Agent.create>> | null = null
-
-async function getDirectorAgent() {
-  if (directorAgent) return directorAgent
-  validateCursorConfiguration()
-  directorAgent = await Agent.create({
-    apiKey: process.env.CURSOR_API_KEY!,
-    model: { id: "composer-2.5", params: [{ id: "thinking", value: "low" }] },
-    local: { cwd: process.cwd() },
-    name: "dopamine-director",
-  })
-  return directorAgent
-}
 
 export async function decideMutation(
   commentText: string,
   currentEmotion: string,
   recentComments: string[],
 ): Promise<DirectorDecision> {
-  const agent = await getDirectorAgent()
+  const apiKey = process.env.CURSOR_API_KEY?.trim()
+  if (!apiKey) {
+    throw new Error("CURSOR_API_KEY not set")
+  }
 
   console.log(`[DopamineDirector] Analyzing comment: "${commentText.substring(0, 50)}" (current: ${currentEmotion})`)
 
@@ -54,17 +41,39 @@ ${context || "(なし)"}
 - 常に配信者が「気づくレベル以上」の激しさを目指す
 - visualMultiplierは基準値に掛ける倍率（1.5=50%増し）`
 
-  const run = await agent.send(prompt)
-  const result = await collectCursorRun(run)
+  // Use Agent.prompt() for one-shot execution (no shared state conflicts)
+  try {
+    const result = await Agent.prompt(prompt, {
+      apiKey,
+      model: { id: "composer-2.5", params: [{ id: "thinking", value: "low" }] },
+      local: { cwd: process.cwd() },
+    })
 
-  console.log(`[DopamineDirector] AI raw response (${result.status}): "${result.text.substring(0, 200)}..."`)
+    console.log(`[DopamineDirector] AI raw response (${result.status}): "${result.result?.substring(0, 200)}..."`)
 
-  const parsed = parseDirectorResponse(result.text)
-  console.log(`[DopamineDirector] Decision: emotion=${parsed.emotionTag}, intensity=${parsed.intensity}, vm=${parsed.visualMultiplier}, glitch=[${parsed.glitchTypes.join(",")}]`)
-  return parsed
+    const parsed = parseDirectorResponse(result.result || "")
+    console.log(`[DopamineDirector] Decision: emotion=${parsed.emotionTag}, intensity=${parsed.intensity}, vm=${parsed.visualMultiplier}, glitch=[${parsed.glitchTypes.join(",")}]`)
+    return parsed
+  } catch (err) {
+    console.error(`[DopamineDirector] Agent.prompt() failed: ${err instanceof Error ? err.message : String(err)}`)
+    // Return fallback
+    return {
+      emotionTag: currentEmotion || "neutral",
+      intensity: 0.6,
+      reasoning: "AI director failed, using current emotion",
+      glitchTypes: ["shake", "invert-flash"],
+      visualMultiplier: 1.2,
+      voiceMultiplier: 1.0,
+      shouldMutant: false,
+    }
+  }
 }
 
-function parseDirectorResponse(text: string): DirectorDecision {
+function parseDirectorResponse(text: string | undefined): DirectorDecision {
+  if (!text) {
+    return createFallback()
+  }
+
   // Extract JSON from possible markdown code blocks
   const jsonMatch = text.match(/```json\s*([\s\S]*?)```/) || text.match(/\{[\s\S]*\}/)
   const jsonStr = jsonMatch ? jsonMatch[1] ?? jsonMatch[0] : text
@@ -82,16 +91,19 @@ function parseDirectorResponse(text: string): DirectorDecision {
     }
   } catch (err) {
     console.error(`[DopamineDirector] JSON parse failed: ${err instanceof Error ? err.message : String(err)}. Raw: "${text.substring(0, 300)}"`)
-    // Fallback to heuristic
-    return {
-      emotionTag: "neutral",
-      intensity: 0.5,
-      reasoning: "AI parse failed, fallback",
-      glitchTypes: ["shake", "invert-flash"],
-      visualMultiplier: 1.2,
-      voiceMultiplier: 1.0,
-      shouldMutant: false,
-    }
+    return createFallback()
+  }
+}
+
+function createFallback(): DirectorDecision {
+  return {
+    emotionTag: "neutral",
+    intensity: 0.5,
+    reasoning: "AI parse failed, fallback",
+    glitchTypes: ["shake", "invert-flash"],
+    visualMultiplier: 1.2,
+    voiceMultiplier: 1.0,
+    shouldMutant: false,
   }
 }
 
