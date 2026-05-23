@@ -200,10 +200,136 @@ export function DopamineBackground({ emotionTag, intensity = 0.5 }: DopamineBack
         style={{ width: "100%", height: "100%" }}
       >
         <Particles emotionTag={emotionTag} intensity={intensity} />
+        <CharacterBurst emotionTag={emotionTag} intensity={intensity} />
         <PostEffects emotionTag={emotionTag} intensity={intensity} />
         <CameraRig />
       </Canvas>
     </div>
+  )
+}
+
+const BURST_COUNT = 400
+
+function emotionToBurstPattern(emotion: string): {
+  spreadX: number
+  spreadY: number
+  speedMin: number
+  speedMax: number
+  gravity: number
+  drag: number
+} {
+  switch (emotion) {
+    case "angry":
+      return { spreadX: 1.2, spreadY: 1.0, speedMin: 0.8, speedMax: 2.5, gravity: 0.0, drag: 0.98 }
+    case "happy":
+      return { spreadX: 0.6, spreadY: -1.5, speedMin: 0.5, speedMax: 1.8, gravity: -0.02, drag: 0.97 }
+    case "sad":
+      return { spreadX: 0.3, spreadY: 1.0, speedMin: 0.2, speedMax: 0.6, gravity: 0.03, drag: 0.99 }
+    case "surprised":
+      return { spreadX: 1.5, spreadY: 1.5, speedMin: 1.5, speedMax: 4.0, gravity: 0.0, drag: 0.96 }
+    case "fear":
+      return { spreadX: 0.8, spreadY: 0.8, speedMin: 0.3, speedMax: 1.0, gravity: 0.0, drag: 0.95 }
+    case "love":
+      return { spreadX: 0.5, spreadY: -1.2, speedMin: 0.4, speedMax: 1.2, gravity: -0.015, drag: 0.98 }
+    default:
+      return { spreadX: 0.8, spreadY: 0.8, speedMin: 0.3, speedMax: 1.0, gravity: 0.0, drag: 0.98 }
+  }
+}
+
+function CharacterBurst({ emotionTag, intensity }: { emotionTag?: string; intensity?: number }) {
+  const meshRef = useRef<THREE.Points>(null)
+  const burstRgb = emotionToColor(emotionTag || "neutral")
+  const burstColor = useMemo(() => new THREE.Color(burstRgb[0], burstRgb[1], burstRgb[2]), [emotionTag])
+  const prevEmotionRef = useRef(emotionTag)
+  const agesRef = useRef(new Float32Array(BURST_COUNT))
+  const maxAgesRef = useRef(new Float32Array(BURST_COUNT))
+
+  const [positions, velocities] = useMemo(() => {
+    const pos = new Float32Array(BURST_COUNT * 3)
+    const vel = new Float32Array(BURST_COUNT * 3)
+    for (let i = 0; i < BURST_COUNT; i++) {
+      pos[i * 3] = 0
+      pos[i * 3 + 1] = -18
+      pos[i * 3 + 2] = 0
+      vel[i * 3] = 0
+      vel[i * 3 + 1] = 0
+      vel[i * 3 + 2] = 0
+      agesRef.current[i] = 9999
+    }
+    return [pos, vel]
+  }, [])
+
+  function spawnBurst(emotion: string, intens: number) {
+    const pattern = emotionToBurstPattern(emotion)
+    for (let i = 0; i < BURST_COUNT; i++) {
+      agesRef.current[i] = 0
+      maxAgesRef.current[i] = 60 + Math.random() * 120 // 2〜4秒（60fps想定）
+      positions[i * 3] = (Math.random() - 0.5) * 4
+      positions[i * 3 + 1] = -18 + (Math.random() - 0.5) * 2
+      positions[i * 3 + 2] = (Math.random() - 0.5) * 2
+      const angle = Math.random() * Math.PI * 2
+      const speed = pattern.speedMin + Math.random() * (pattern.speedMax - pattern.speedMin)
+      velocities[i * 3] = Math.cos(angle) * speed * pattern.spreadX * (1 + intens)
+      velocities[i * 3 + 1] = (Math.sin(angle) * speed * 0.5 + pattern.spreadY * speed * 0.5) * (1 + intens * 0.5)
+      velocities[i * 3 + 2] = (Math.random() - 0.5) * speed * 0.3
+    }
+  }
+
+  useFrame(() => {
+    if (!meshRef.current) return
+    const geometry = meshRef.current.geometry as THREE.BufferGeometry
+    const posArray = geometry.attributes.position.array as Float32Array
+    const pattern = emotionToBurstPattern(emotionTag || "neutral")
+
+    // Detect emotion change for burst
+    if (emotionTag !== prevEmotionRef.current) {
+      spawnBurst(emotionTag || "neutral", intensity ?? 0.5)
+      prevEmotionRef.current = emotionTag
+      ;(meshRef.current.material as THREE.PointsMaterial).color.copy(burstColor)
+    }
+
+    let activeCount = 0
+    for (let i = 0; i < BURST_COUNT; i++) {
+      agesRef.current[i]++
+      if (agesRef.current[i] > maxAgesRef.current[i]) {
+        // Hide expired particle
+        posArray[i * 3 + 1] = -9999
+        continue
+      }
+      activeCount++
+      const i3 = i * 3
+      // Apply velocity
+      posArray[i3] += velocities[i3]
+      posArray[i3 + 1] += velocities[i3 + 1]
+      posArray[i3 + 2] += velocities[i3 + 2]
+      // Apply gravity
+      velocities[i3 + 1] += pattern.gravity
+      // Apply drag
+      velocities[i3] *= pattern.drag
+      velocities[i3 + 1] *= pattern.drag
+      velocities[i3 + 2] *= pattern.drag
+    }
+
+    geometry.attributes.position.needsUpdate = true
+  })
+
+  const geometry = useMemo(() => {
+    const geo = new THREE.BufferGeometry()
+    geo.setAttribute("position", new THREE.BufferAttribute(positions, 3))
+    return geo
+  }, [positions])
+
+  return (
+    <points ref={meshRef} geometry={geometry}>
+      <pointsMaterial
+        size={1.2}
+        color={burstColor}
+        blending={THREE.AdditiveBlending}
+        depthWrite={false}
+        transparent
+        opacity={0.8}
+      />
+    </points>
   )
 }
 
