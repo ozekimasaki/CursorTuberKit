@@ -356,8 +356,12 @@ export function App() {
   // Heavy mutation auto-trigger every 2 minutes
   useEffect(() => {
     const interval = setInterval(() => {
+      console.log("[AutoTrigger] Checking heavy mutation readiness...")
       if (dopamine.isHeavyMutationReady() && Math.random() < 0.5) {
+        console.log("[AutoTrigger] Auto-triggering HEAVY mutation!")
         void triggerHeavyPersonaMutation()
+      } else {
+        console.log(`[AutoTrigger] Heavy mutation skipped (ready=${dopamine.isHeavyMutationReady()})`)
       }
     }, 2 * 60 * 1000)
     return () => clearInterval(interval)
@@ -455,14 +459,21 @@ export function App() {
   }
 
   async function triggerLivePersonaMutation(cueText?: string, _receivedAt?: string) {
-    if (!dopamine.isHeavyMutationReady()) return
+    if (!dopamine.isHeavyMutationReady()) {
+      console.log("[LiveMutation] SKIPPED - cooldown not ready")
+      return
+    }
+    console.log(`[LiveMutation] TRIGGERED by: "${cueText?.substring(0, 40)}"`)
     dopamine.setLiveMutationBusy(true)
     try {
       const emotion = cueText ? inferQuickEmotion(cueText) : undefined
+      console.log(`[LiveMutation] Calling API with emotion=${emotion}...`)
       const result = await requestLiveMutation({
         cueText,
         cueEmotion: emotion,
       })
+      console.log(`[LiveMutation] SUCCESS! Summary: "${result.summary}"`)
+      console.log(`[LiveMutation] New prompt: "${result.settings.characterPrompt.substring(0, 80)}..."`)
       setChatSettings({
         ...chatSettings,
         characterPrompt: result.settings.characterPrompt,
@@ -486,20 +497,27 @@ export function App() {
       })
       // Auto-enqueue the monologue for speech if voice is enabled
       if (voiceEnabled && result.monologue) {
+        console.log(`[LiveMutation] Speaking monologue: "${result.monologue.substring(0, 60)}..."`)
         void runPrompt(result.monologue, { interruptCurrent: false })
       }
     } catch (error) {
-      console.warn("[liveMutation] failed:", error)
+      console.warn("[LiveMutation] FAILED:", error)
     } finally {
       dopamine.setLiveMutationBusy(false)
     }
   }
 
   async function triggerHeavyPersonaMutation(cueText?: string) {
-    if (!dopamine.isHeavyMutationReady()) return
+    if (!dopamine.isHeavyMutationReady()) {
+      console.log("[HeavyMutation] SKIPPED - cooldown not ready")
+      return
+    }
+    console.log(`[HeavyMutation] TRIGGERED by: "${cueText?.substring(0, 40) || "autopilot"}"`)
     dopamine.setLiveMutationBusy(true)
     try {
       const result = await requestHeavyMutation({ cueText })
+      console.log(`[HeavyMutation] SUCCESS! Summary: "${result.summary}"`)
+      console.log(`[HeavyMutation] New prompt: "${result.settings.characterPrompt.substring(0, 80)}..."`)
       setChatSettings({
         ...chatSettings,
         characterPrompt: result.settings.characterPrompt,
@@ -523,10 +541,11 @@ export function App() {
       // Stronger visual effect for heavy mutation
       dopamine.triggerManualCue("surprised")
       if (voiceEnabled && result.monologue) {
+        console.log(`[HeavyMutation] Speaking monologue: "${result.monologue.substring(0, 60)}..."`)
         void runPrompt(result.monologue, { interruptCurrent: false })
       }
     } catch (error) {
-      console.warn("[heavyMutation] failed:", error)
+      console.warn("[HeavyMutation] FAILED:", error)
     } finally {
       dopamine.setLiveMutationBusy(false)
     }

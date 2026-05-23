@@ -220,6 +220,50 @@ export function DopamineEffects({ state, children }: DopamineEffectsProps) {
           </div>
         </div>
       )}
+
+      {/* Prompt Mutation History Log */}
+      {state.personaHistory.length > 0 && (
+        <div
+          style={{
+            position: "fixed",
+            top: 8,
+            right: 8,
+            zIndex: 9997,
+            background: "rgba(0,0,0,0.85)",
+            color: "#ff8",
+            fontFamily: "monospace",
+            fontSize: 10,
+            padding: "6px 10px",
+            borderRadius: 4,
+            border: "1px solid #ff8",
+            maxWidth: 260,
+            maxHeight: 200,
+            overflowY: "auto",
+            pointerEvents: "none",
+            backdropFilter: "blur(4px)",
+            lineHeight: 1.4,
+          }}
+        >
+          <div style={{ fontWeight: "bold", marginBottom: 4, color: "#ff8" }}>
+            🔄 PROMPT MUTATIONS ({state.personaHistory.length})
+          </div>
+          {state.personaHistory.slice(0, 5).map((m, i) => (
+            <div key={m.id} style={{ marginBottom: 4, opacity: i === 0 ? 1 : 0.6 }}>
+              <div style={{ color: i === 0 ? "#ff8" : "#aa8", fontWeight: i === 0 ? "bold" : "normal" }}>
+                {i === 0 ? "●" : "○"} {m.summary}
+              </div>
+              <div style={{ color: "#888", fontSize: 9 }}>
+                {m.cue.kind} | {m.cue.emotionTag || "neutral"}
+              </div>
+              {i === 0 && m.monologue && (
+                <div style={{ color: "#afa", fontSize: 9, marginTop: 2 }}>
+                  "{m.monologue.substring(0, 40)}..."
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

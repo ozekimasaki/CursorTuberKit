@@ -861,8 +861,11 @@ app.post(
     const cueText = typeof body.cueText === "string" ? body.cueText : undefined
     const cueEmotion = typeof body.cueEmotion === "string" ? body.cueEmotion : undefined
 
+    console.log(`[API /character/live-rewrite] Request received: cueText="${cueText?.substring(0, 40)}" emotion=${cueEmotion}`)
+
     const apiKey = process.env.CURSOR_API_KEY?.trim()
     if (!apiKey) {
+      console.warn("[API /character/live-rewrite] CURSOR_API_KEY not set")
       response.status(503).json({ error: "CURSOR_API_KEY が未設定です。" })
       return
     }
@@ -871,6 +874,7 @@ app.post(
     try {
       chatSettings = await readChatSettings()
     } catch (error) {
+      console.error(`[API /character/live-rewrite] Failed to read settings: ${getErrorMessage(error)}`)
       response.status(500).json({ error: getErrorMessage(error) })
       return
     }
@@ -879,6 +883,7 @@ app.post(
     const mutatorModel = appConfig.cursor.personaCuratorModel || route.characterAgentModel || route.model
 
     try {
+      console.log(`[API /character/live-rewrite] Calling runLiveMutation with model=${mutatorModel}...`)
       const result = await runLiveMutation({
         apiKey,
         model: mutatorModel,
@@ -888,6 +893,7 @@ app.post(
         signal: readRequestSignal(request),
       })
 
+      console.log(`[API /character/live-rewrite] Mutation success! summary="${result.summary}"`)
       const saved = await updateChatSettings({
         characterPrompt: result.characterPrompt,
         characterFullPrompt: result.characterFullPrompt,
@@ -901,6 +907,7 @@ app.post(
         updatedAt: new Date().toISOString(),
       })
     } catch (error) {
+      console.error(`[API /character/live-rewrite] Mutation failed: ${getErrorMessage(error)}`)
       const status = error instanceof LiveMutationError ? 502 : 500
       response.status(status).json({ error: getErrorMessage(error) })
     }
@@ -913,8 +920,11 @@ app.post(
     const body = request.body as Record<string, unknown>
     const cueText = typeof body.cueText === "string" ? body.cueText : undefined
 
+    console.log(`[API /character/heavy-rewrite] Request received: cueText="${cueText?.substring(0, 40) || "autopilot"}"`)
+
     const apiKey = process.env.CURSOR_API_KEY?.trim()
     if (!apiKey) {
+      console.warn("[API /character/heavy-rewrite] CURSOR_API_KEY not set")
       response.status(503).json({ error: "CURSOR_API_KEY が未設定です。" })
       return
     }
@@ -923,6 +933,7 @@ app.post(
     try {
       chatSettings = await readChatSettings()
     } catch (error) {
+      console.error(`[API /character/heavy-rewrite] Failed to read settings: ${getErrorMessage(error)}`)
       response.status(500).json({ error: getErrorMessage(error) })
       return
     }
@@ -931,6 +942,7 @@ app.post(
     const mutatorModel = appConfig.cursor.personaCuratorModel || route.characterAgentModel || route.model
 
     try {
+      console.log(`[API /character/heavy-rewrite] Calling runHeavyMutation with model=${mutatorModel}...`)
       const result = await runHeavyMutation({
         apiKey,
         model: mutatorModel,
@@ -939,6 +951,7 @@ app.post(
         signal: readRequestSignal(request),
       })
 
+      console.log(`[API /character/heavy-rewrite] Mutation success! summary="${result.summary}"`)
       const saved = await updateChatSettings({
         characterPrompt: result.characterPrompt,
         characterFullPrompt: result.characterFullPrompt,
@@ -952,6 +965,7 @@ app.post(
         updatedAt: new Date().toISOString(),
       })
     } catch (error) {
+      console.error(`[API /character/heavy-rewrite] Mutation failed: ${getErrorMessage(error)}`)
       const status = error instanceof HeavyMutationError ? 502 : 500
       response.status(status).json({ error: getErrorMessage(error) })
     }
