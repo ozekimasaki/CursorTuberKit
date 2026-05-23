@@ -770,10 +770,29 @@ function normalizeHookEmotionAnalysis(
 
 function extractJsonObject(rawResponse: string) {
   const firstBraceIndex = rawResponse.indexOf("{")
-  const lastBraceIndex = rawResponse.lastIndexOf("}")
 
-  if (firstBraceIndex < 0 || lastBraceIndex < 0 || lastBraceIndex <= firstBraceIndex) {
+  if (firstBraceIndex < 0) {
     throw new Error("Expected a JSON object in Cursor emotion drift analysis output.")
+  }
+
+  // Find matching closing brace by counting depth
+  let depth = 0
+  let lastBraceIndex = -1
+  for (let i = firstBraceIndex; i < rawResponse.length; i++) {
+    const char = rawResponse[i]
+    if (char === "{") {
+      depth++
+    } else if (char === "}") {
+      depth--
+      if (depth === 0) {
+        lastBraceIndex = i
+        break
+      }
+    }
+  }
+
+  if (lastBraceIndex < 0) {
+    throw new Error("Expected a complete JSON object in Cursor emotion drift analysis output.")
   }
 
   return rawResponse.slice(firstBraceIndex, lastBraceIndex + 1)
