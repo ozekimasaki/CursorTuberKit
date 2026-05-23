@@ -968,19 +968,24 @@ app.post(
     const currentEmotion = typeof body.currentEmotion === "string" ? body.currentEmotion : "neutral"
     const recentComments = Array.isArray(body.recentComments) ? body.recentComments.map(String) : []
 
+    console.log(`[API /dopamine/direct] Request received: comment="${commentText.substring(0, 40)}..." emotion=${currentEmotion}`)
+
     const apiKey = process.env.CURSOR_API_KEY?.trim()
     if (!apiKey) {
+      console.warn("[API /dopamine/direct] CURSOR_API_KEY not set, returning 503")
       response.status(503).json({ error: "CURSOR_API_KEY が未設定です。" })
       return
     }
 
     try {
       const decision = await decideMutation(commentText, currentEmotion, recentComments)
+      console.log(`[API /dopamine/direct] Returning decision: ${decision.emotionTag}(${decision.intensity})`)
       response.json({
         decision,
         cue: applyDirectorDecision(decision, commentText, new Date().toISOString()),
       })
     } catch (error) {
+      console.error(`[API /dopamine/direct] Error: ${getErrorMessage(error)}`)
       response.status(500).json({ error: getErrorMessage(error) })
     }
   }),

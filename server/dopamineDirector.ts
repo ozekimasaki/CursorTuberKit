@@ -24,6 +24,8 @@ export async function decideMutation(
 ): Promise<DirectorDecision> {
   const agent = await getDirectorAgent()
 
+  console.log(`[DopamineDirector] Analyzing comment: "${commentText.substring(0, 50)}" (current: ${currentEmotion})`)
+
   const context = recentComments.slice(-5).join("\n")
   const prompt = `あなたはVTuber配信の「ドーパミン演出ディレクター」AIです。
 視聴者コメントから最適な感情タグと演出強度を即座に決定してください。
@@ -55,7 +57,10 @@ ${context || "(なし)"}
   const run = await agent.send(prompt)
   const result = await collectCursorRun(run)
 
+  console.log(`[DopamineDirector] AI raw response (${result.status}): "${result.text.substring(0, 200)}..."`)
+
   const parsed = parseDirectorResponse(result.text)
+  console.log(`[DopamineDirector] Decision: emotion=${parsed.emotionTag}, intensity=${parsed.intensity}, vm=${parsed.visualMultiplier}, glitch=[${parsed.glitchTypes.join(",")}]`)
   return parsed
 }
 
@@ -75,7 +80,8 @@ function parseDirectorResponse(text: string): DirectorDecision {
       voiceMultiplier: Math.min(3, Math.max(0.3, Number(data.voiceMultiplier) || 1)),
       shouldMutant: Boolean(data.shouldMutant),
     }
-  } catch {
+  } catch (err) {
+    console.error(`[DopamineDirector] JSON parse failed: ${err instanceof Error ? err.message : String(err)}. Raw: "${text.substring(0, 300)}"`)
     // Fallback to heuristic
     return {
       emotionTag: "neutral",

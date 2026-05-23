@@ -118,6 +118,18 @@ export function DopamineEffects({ state, children }: DopamineEffectsProps) {
     } as React.CSSProperties
   }, [visual])
 
+  const director = state.lastDirectorDecision
+  const [showDebug, setShowDebug] = useState(false)
+
+  // Show debug panel briefly when AI makes a decision
+  useEffect(() => {
+    if (director) {
+      setShowDebug(true)
+      const timer = setTimeout(() => setShowDebug(false), 6000)
+      return () => clearTimeout(timer)
+    }
+  }, [director])
+
   return (
     <div
       ref={containerRef}
@@ -170,6 +182,44 @@ export function DopamineEffects({ state, children }: DopamineEffectsProps) {
       >
         {children}
       </div>
+
+      {/* AI Director debug overlay - confirms AI is actually running */}
+      {showDebug && director && (
+        <div
+          style={{
+            position: "fixed",
+            top: 8,
+            left: 8,
+            zIndex: 9998,
+            background: "rgba(0,0,0,0.85)",
+            color: "#0f0",
+            fontFamily: "monospace",
+            fontSize: 11,
+            padding: "6px 10px",
+            borderRadius: 4,
+            border: "1px solid #0f0",
+            maxWidth: 280,
+            pointerEvents: "none",
+            backdropFilter: "blur(4px)",
+            lineHeight: 1.5,
+          }}
+        >
+          <div style={{ fontWeight: "bold", marginBottom: 4, color: "#0ff" }}>
+            🧠 AI DIRECTOR ACTIVE
+          </div>
+          <div>Emotion: {director.emotionTag}</div>
+          <div>Intensity: {(director.intensity * 100).toFixed(0)}%</div>
+          <div>Visual: ×{director.visualMultiplier.toFixed(2)}</div>
+          <div>Voice: ×{director.voiceMultiplier.toFixed(2)}</div>
+          <div>Glitch: [{director.glitchTypes.slice(0, 4).join(",")}]</div>
+          <div style={{ marginTop: 4, color: "#aaa", fontSize: 10 }}>
+            {director.reasoning}
+          </div>
+          <div style={{ marginTop: 2, color: "#666", fontSize: 9 }}>
+            {state.activeCue?.meta?.reasoning ?? ""}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

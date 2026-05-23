@@ -134,6 +134,7 @@ export function useDopamineEngine(): DopamineEngine {
     async (event: PlatformViewerEvent) => {
       if (event.kind !== "comment" || !event.text) return
       const cue = buildCommentCue(event.text, event.receivedAt)
+      console.log(`[DopamineEngine] Comment received: "${event.text.substring(0, 40)}" → local emotion=${cue.emotionTag}`)
 
       // Fire-and-forget agent voting for telemetry / future use
       try {
@@ -151,6 +152,7 @@ export function useDopamineEngine(): DopamineEngine {
 
       // Try AI director first
       try {
+        console.log(`[DopamineEngine] Calling AI director...`)
         const res = await fetch("/api/dopamine/direct", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -165,6 +167,7 @@ export function useDopamineEngine(): DopamineEngine {
             decision: DirectorDecision
             cue: MutationCue
           }
+          console.log(`[DopamineEngine] AI director responded: emotion=${data.decision.emotionTag}, intensity=${data.decision.intensity}, vm=${data.decision.visualMultiplier}, glitch=[${data.decision.glitchTypes.join(",")}]`)
           const mergedCue: MutationCue = {
             ...data.cue,
             meta: {
@@ -190,10 +193,12 @@ export function useDopamineEngine(): DopamineEngine {
           }
           return
         }
-      } catch {
-        // fallback to local
+        console.warn(`[DopamineEngine] AI director returned status ${res.status}, falling back to local`)
+      } catch (err) {
+        console.error(`[DopamineEngine] AI director failed: ${err instanceof Error ? err.message : String(err)}, falling back to local`)
       }
 
+      console.log(`[DopamineEngine] Using LOCAL fallback for: "${event.text.substring(0, 40)}"`)
       triggerCue(cue)
     },
     [triggerCue],
