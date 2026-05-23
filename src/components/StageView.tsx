@@ -9,6 +9,7 @@ import type { AvatarMode, MotionPngAssetStatus, MotionPngSettings, SvgAvatarSett
 import type { Viseme } from "../lib/visemes"
 import type { PlatformViewerEvent } from "../../shared/platformChat"
 import type { DopamineState } from "../../shared/dopamineMutation"
+import { DopamineBackground } from "./DopamineBackground"
 import { defaultStageCaptionStyle, type StageCaptionStyle } from "../lib/stagePreferences"
 import { useCaptionFont } from "../lib/googleFonts"
 
@@ -136,6 +137,11 @@ export function StageView({
           style={{ background: stageBackgroundMedia.css }}
         />
       )}
+
+      <DopamineBackground
+        emotionTag={dopamineState?.activeCue?.emotionTag}
+        intensity={dopamineState?.activeCue?.intensity ?? 0.5}
+      />
 
       <div className="stage-view__avatar">
         <div className="stage-view__avatar-frame">

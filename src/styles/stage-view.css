@@ -39,6 +39,7 @@ body.stage-mode {
   background-size: cover;
   background-position: center center;
   background-repeat: no-repeat;
+  z-index: 0;
 }
 
 .stage-view__avatar {
