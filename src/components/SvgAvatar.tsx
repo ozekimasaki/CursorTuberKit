@@ -12,11 +12,12 @@ type SvgAvatarProps = {
   state: AvatarState
   viseme?: Viseme
   sinSignal?: SinExpressionSignal
+  expressionClasses?: string
 }
 
-export function SvgAvatar({ character, ...rest }: SvgAvatarProps) {
+export function SvgAvatar({ character, expressionClasses, ...rest }: SvgAvatarProps) {
   if (character === "catlin_v2") {
     return <CatlinV2Avatar {...rest} />
   }
-  return <MaidCatAvatar {...rest} />
+  return <MaidCatAvatar {...rest} expressionClasses={expressionClasses} />
 }

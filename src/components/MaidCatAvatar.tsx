@@ -12,9 +12,11 @@ type MaidCatAvatarProps = {
   viseme?: Viseme
   // Accepted for symmetry with CatlinV2Avatar; not yet consumed.
   sinSignal?: SinExpressionSignal
+  /** CSS classes for SVG part animations */
+  expressionClasses?: string
 }
 
-export function MaidCatAvatar({ state, viseme, emotion = "neutral", hideBackgroundDecor = false }: MaidCatAvatarProps) {
+export function MaidCatAvatar({ state, viseme, emotion = "neutral", hideBackgroundDecor = false, expressionClasses = "" }: MaidCatAvatarProps) {
   const emotionClass = ` avatar--emotion-${emotion}`
   const visemeClass = viseme ? ` avatar--viseme-${viseme}` : ""
   const backgroundClass = hideBackgroundDecor ? " avatar--clean-background" : ""
@@ -22,7 +24,7 @@ export function MaidCatAvatar({ state, viseme, emotion = "neutral", hideBackgrou
   return (
     <div
       aria-label={`メイド猫アバター: ${state}`}
-      className={`avatar avatar--${state}${emotionClass}${visemeClass}${backgroundClass}`}
+      className={`avatar avatar--${state}${emotionClass}${visemeClass}${backgroundClass} ${expressionClasses}`}
       dangerouslySetInnerHTML={{ __html: maidCatSvg }}
       role="img"
     />

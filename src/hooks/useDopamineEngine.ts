@@ -14,6 +14,7 @@ import {
   cueToVoiceParams,
   DEFAULT_VISUAL_MUTATION,
 } from "../../shared/dopamineMutation"
+import { getMaidCatExpressionClasses } from "../../shared/maidCatExpressions"
 import type { PlatformViewerEvent } from "../../shared/platformChat"
 
 const MORPH_INTERVAL_MS = 100
@@ -99,6 +100,8 @@ export function useDopamineEngine(): DopamineEngine {
     (cue: MutationCue, decision?: DirectorDecision) => {
       const targetVisual = cueToVisualParams(cue)
       const voice = cueToVoiceParams(cue)
+      const emotionTag = cue.emotionTag ?? "neutral"
+      const maidCatClasses = getMaidCatExpressionClasses(emotionTag)
 
       setState((prev) => {
         const next: DopamineState = {
@@ -108,6 +111,8 @@ export function useDopamineEngine(): DopamineEngine {
           voice,
           activeCue: cue,
           lastDirectorDecision: decision ?? prev.lastDirectorDecision,
+          currentEmotionTag: emotionTag,
+          maidCatExpressionClasses: maidCatClasses,
         }
         return next
       })
@@ -239,6 +244,8 @@ export function useDopamineEngine(): DopamineEngine {
         voice: { speedDelta: 0, pitchDelta: 0, intonationDelta: 0, speakerId: null },
         phase: "reverting",
         activeCue: null,
+        currentEmotionTag: "neutral",
+        maidCatExpressionClasses: getMaidCatExpressionClasses("neutral"),
       }
     })
   }, [])

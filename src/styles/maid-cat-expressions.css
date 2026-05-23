@@ -1,0 +1,663 @@
+/* ============================================
+   Maid Cat SVG Part Animations
+   50+ individual part animations
+   ============================================ */
+
+/* --- transform-origin for parts --- */
+#tail-bow { transform-origin: 580px 550px; }
+#legs { transform-origin: 450px 750px; }
+#body { transform-origin: 450px 550px; }
+#waist-bow { transform-origin: 450px 670px; }
+#left-gesture-arm { transform-origin: 300px 480px; }
+#left-paw { transform-origin: 210px 650px; }
+#right-serving-arm { transform-origin: 600px 480px; }
+#tray-grip-paw { transform-origin: 720px 540px; }
+#serving-tray { transform-origin: 730px 500px; }
+#tea-cup { transform-origin: 700px 470px; }
+#cupcake { transform-origin: 790px 470px; }
+#head { transform-origin: 450px 280px; }
+#maid-headpiece { transform-origin: 450px 160px; }
+#left-eye { transform-origin: 390px 333px; }
+#right-eye { transform-origin: 510px 333px; }
+#eyebrows { transform-origin: 450px 300px; }
+#mouth { transform-origin: 450px 400px; }
+#whiskers { transform-origin: 450px 380px; }
+#blush { transform-origin: 450px 360px; }
+#frills { transform-origin: 450px 650px; }
+#front-collar-overlay { transform-origin: 450px 430px; }
+
+/* ============================================
+   1. EYE ANIMATIONS (12 patterns)
+   ============================================ */
+
+@keyframes eye-blink {
+  0%, 90%, 100% { transform: scaleY(1); }
+  95% { transform: scaleY(0.1); }
+}
+
+@keyframes eye-sparkle {
+  0%, 100% { transform: scale(1); filter: brightness(1); }
+  25% { transform: scale(1.15); filter: brightness(1.4) drop-shadow(0 0 8px #fff); }
+  50% { transform: scale(1); filter: brightness(1.2); }
+  75% { transform: scale(1.1); filter: brightness(1.3) drop-shadow(0 0 5px #ffd); }
+}
+
+@keyframes eye-glare {
+  0%, 100% { transform: scaleY(1); filter: brightness(1); }
+  50% { transform: scaleY(0.6); filter: brightness(1.3) contrast(1.2); }
+}
+
+@keyframes eye-heart {
+  0%, 100% { transform: scale(1); }
+  25% { transform: scale(1.2) rotate(-5deg); filter: hue-rotate(320deg) brightness(1.3); }
+  50% { transform: scale(1.1) rotate(5deg); filter: hue-rotate(300deg) brightness(1.4); }
+  75% { transform: scale(1.15) rotate(-3deg); filter: hue-rotate(330deg) brightness(1.2); }
+}
+
+@keyframes eye-tear {
+  0% { transform: translateY(0); opacity: 1; }
+  50% { transform: translateY(20px); opacity: 0.8; }
+  100% { transform: translateY(40px); opacity: 0; }
+}
+
+@keyframes eye-half-open {
+  0%, 100% { transform: scaleY(0.7); }
+  50% { transform: scaleY(0.5); }
+}
+
+@keyframes eye-wide-open {
+  0%, 100% { transform: scaleY(1.3) scaleX(1.1); filter: brightness(1.2); }
+  50% { transform: scaleY(1.4) scaleX(1.15); filter: brightness(1.4) drop-shadow(0 0 6px #fff); }
+}
+
+@keyframes eye-dizzy {
+  0% { transform: rotate(0deg) scale(1); }
+  25% { transform: rotate(90deg) scale(1.1); }
+  50% { transform: rotate(180deg) scale(1); }
+  75% { transform: rotate(270deg) scale(1.1); }
+  100% { transform: rotate(360deg) scale(1); }
+}
+
+@keyframes eye-glow {
+  0%, 100% { filter: brightness(1) drop-shadow(0 0 0 transparent); }
+  50% { filter: brightness(1.5) drop-shadow(0 0 12px #ff6b9d); }
+}
+
+@keyframes eye-xd {
+  0%, 100% { transform: scaleY(1); }
+  50% { transform: scaleY(0.3) scaleX(1.2); }
+}
+
+@keyframes eye-sleepy {
+  0%, 100% { transform: scaleY(0.6); }
+  50% { transform: scaleY(0.4); }
+}
+
+@keyframes eye-angry-glow {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.3) drop-shadow(0 0 10px #ff0000); }
+}
+
+/* --- Eye emotion classes --- */
+.mc-eye-blink #left-eye,
+.mc-eye-blink #right-eye { animation: eye-blink 3s infinite; }
+
+.mc-eye-sparkle #left-eye,
+.mc-eye-sparkle #right-eye { animation: eye-sparkle 1.2s infinite; }
+
+.mc-eye-glare #left-eye,
+.mc-eye-glare #right-eye { animation: eye-glare 0.8s infinite; }
+
+.mc-eye-heart #left-eye,
+.mc-eye-heart #right-eye { animation: eye-heart 1s infinite; }
+
+.mc-eye-tear #left-eye::after,
+.mc-eye-tear #right-eye::after {
+  content: '';
+  position: absolute;
+  width: 8px; height: 12px;
+  background: #88ccff;
+  border-radius: 50%;
+  animation: eye-tear 1.5s infinite;
+}
+
+.mc-eye-half-open #left-eye,
+.mc-eye-half-open #right-eye { animation: eye-half-open 2s infinite ease-in-out; }
+
+.mc-eye-wide-open #left-eye,
+.mc-eye-wide-open #right-eye { animation: eye-wide-open 0.8s infinite; }
+
+.mc-eye-dizzy #left-eye,
+.mc-eye-dizzy #right-eye { animation: eye-dizzy 2s linear infinite; }
+
+.mc-eye-glow #left-eye,
+.mc-eye-glow #right-eye { animation: eye-glow 1.5s infinite; }
+
+.mc-eye-xd #left-eye,
+.mc-eye-xd #right-eye { animation: eye-xd 1s infinite; }
+
+.mc-eye-sleepy #left-eye,
+.mc-eye-sleepy #right-eye { animation: eye-sleepy 3s infinite ease-in-out; }
+
+.mc-eye-angry-glow #left-eye,
+.mc-eye-angry-glow #right-eye { animation: eye-angry-glow 0.5s infinite; }
+
+/* ============================================
+   2. EYEBROW ANIMATIONS (8 patterns)
+   ============================================ */
+
+@keyframes brow-angry {
+  0%, 100% { transform: translateY(0) rotate(0); }
+  50% { transform: translateY(8px) rotate(-5deg); }
+}
+
+@keyframes brow-sad {
+  0%, 100% { transform: translateY(0) rotate(0); }
+  50% { transform: translateY(-5px) rotate(3deg); }
+}
+
+@keyframes brow-surprised {
+  0%, 100% { transform: translateY(-10px) scaleY(1.2); }
+  50% { transform: translateY(-15px) scaleY(1.3); }
+}
+
+@keyframes brow-confused {
+  0%, 100% { transform: rotate(0); }
+  50% { transform: rotate(-8deg); }
+}
+
+@keyframes brow-happy {
+  0%, 100% { transform: translateY(-5px); }
+  50% { transform: translateY(-12px); }
+}
+
+@keyframes brow-determined {
+  0%, 100% { transform: translateY(3px) scaleY(0.8); }
+  50% { transform: translateY(5px) scaleY(0.7); }
+}
+
+@keyframes brow-worry {
+  0%, 100% { transform: rotate(0); }
+  50% { transform: rotate(5deg) translateY(3px); }
+}
+
+@keyframes brow-flat {
+  0%, 100% { transform: translateY(5px) scaleY(0.6); }
+}
+
+/* --- Eyebrow emotion classes --- */
+.mc-brow-angry #eyebrows { animation: brow-angry 0.6s infinite; }
+.mc-brow-sad #eyebrows { animation: brow-sad 2s infinite ease-in-out; }
+.mc-brow-surprised #eyebrows { animation: brow-surprised 0.8s infinite; }
+.mc-brow-confused #eyebrows { animation: brow-confused 1.5s infinite ease-in-out; }
+.mc-brow-happy #eyebrows { animation: brow-happy 1s infinite ease-in-out; }
+.mc-brow-determined #eyebrows { animation: brow-determined 0.8s infinite; }
+.mc-brow-worry #eyebrows { animation: brow-worry 1.2s infinite ease-in-out; }
+.mc-brow-flat #eyebrows { animation: brow-flat 1s infinite; }
+
+/* ============================================
+   3. MOUTH ANIMATIONS (12 patterns)
+   ============================================ */
+
+@keyframes mouth-smile {
+  0%, 100% { transform: scaleY(1); }
+  50% { transform: scaleY(1.15) scaleX(1.05); }
+}
+
+@keyframes mouth-big-smile {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.2) translateY(-3px); }
+}
+
+@keyframes mouth-grit {
+  0%, 100% { transform: scaleY(1); }
+  50% { transform: scaleY(0.7) scaleX(1.1); }
+}
+
+@keyframes mouth-open-surprised {
+  0%, 100% { transform: scaleY(1.3) scaleX(1.1); }
+  50% { transform: scaleY(1.5) scaleX(1.2); }
+}
+
+@keyframes mouth-sad {
+  0%, 100% { transform: rotate(0); }
+  50% { transform: rotate(-5deg) translateY(3px); }
+}
+
+@keyframes mouth-pout {
+  0%, 100% { transform: scaleX(0.8) scaleY(1.2); }
+  50% { transform: scaleX(0.7) scaleY(1.3); }
+}
+
+@keyframes mouth-nervous {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-2px); }
+  75% { transform: translateX(2px); }
+}
+
+@keyframes mouth-tongue {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(8px) scaleY(1.2); }
+}
+
+@keyframes mouth-cat {
+  0%, 100% { transform: scaleY(1); }
+  50% { transform: scaleY(0.9) scaleX(1.1); }
+}
+
+@keyframes mouth-tremble {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-1px); }
+  40% { transform: translateX(1px); }
+  60% { transform: translateX(-1px); }
+  80% { transform: translateX(1px); }
+}
+
+@keyframes mouth-smirk {
+  0%, 100% { transform: rotate(0); }
+  50% { transform: rotate(3deg) scaleX(1.05); }
+}
+
+@keyframes mouth-drool {
+  0%, 100% { transform: scaleY(1); }
+  50% { transform: scaleY(1.1) translateY(3px); }
+}
+
+/* --- Mouth emotion classes --- */
+.mc-mouth-smile #mouth { animation: mouth-smile 1.5s infinite ease-in-out; }
+.mc-mouth-big-smile #mouth { animation: mouth-big-smile 1.2s infinite ease-in-out; }
+.mc-mouth-grit #mouth { animation: mouth-grit 0.5s infinite; }
+.mc-mouth-open-surprised #mouth { animation: mouth-open-surprised 0.8s infinite; }
+.mc-mouth-sad #mouth { animation: mouth-sad 2s infinite ease-in-out; }
+.mc-mouth-pout #mouth { animation: mouth-pout 1.5s infinite ease-in-out; }
+.mc-mouth-nervous #mouth { animation: mouth-nervous 0.3s infinite; }
+.mc-mouth-tongue #mouth { animation: mouth-tongue 1s infinite ease-in-out; }
+.mc-mouth-cat #mouth { animation: mouth-cat 1.5s infinite ease-in-out; }
+.mc-mouth-tremble #mouth { animation: mouth-tremble 0.5s infinite; }
+.mc-mouth-smirk #mouth { animation: mouth-smirk 2s infinite ease-in-out; }
+.mc-mouth-drool #mouth { animation: mouth-drool 1.5s infinite ease-in-out; }
+
+/* ============================================
+   4. BLUSH ANIMATIONS (5 patterns)
+   ============================================ */
+
+@keyframes blush-hearts {
+  0%, 100% { opacity: 0.45; transform: scale(1); }
+  50% { opacity: 0.8; transform: scale(1.1); filter: hue-rotate(330deg) brightness(1.2); }
+}
+
+@keyframes blush-intense {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; filter: brightness(1.3) saturate(1.5); }
+}
+
+@keyframes blush-pale {
+  0%, 100% { opacity: 0.2; filter: grayscale(0.5) brightness(0.8); }
+  50% { opacity: 0.3; filter: grayscale(0.3) brightness(0.9); }
+}
+
+@keyframes blush-pulse {
+  0%, 100% { opacity: 0.45; transform: scale(1); }
+  50% { opacity: 0.7; transform: scale(1.15); }
+}
+
+@keyframes blush-hide {
+  0%, 100% { opacity: 0; }
+}
+
+/* --- Blush emotion classes --- */
+.mc-blush-hearts #blush { animation: blush-hearts 1.5s infinite; }
+.mc-blush-intense #blush { animation: blush-intense 1s infinite; }
+.mc-blush-pale #blush { animation: blush-pale 2s infinite ease-in-out; }
+.mc-blush-pulse #blush { animation: blush-pulse 1.2s infinite ease-in-out; }
+.mc-blush-hide #blush { animation: blush-hide 0.5s forwards; }
+
+/* ============================================
+   5. WHISKER ANIMATIONS (4 patterns)
+   ============================================ */
+
+@keyframes whiskers-twitch {
+  0%, 100% { transform: rotate(0); }
+  25% { transform: rotate(-3deg); }
+  75% { transform: rotate(3deg); }
+}
+
+@keyframes whiskers-flare {
+  0%, 100% { transform: scaleX(1); }
+  50% { transform: scaleX(1.3) translateY(-2px); }
+}
+
+@keyframes whiskers-droopy {
+  0%, 100% { transform: rotate(0); }
+  50% { transform: rotate(8deg) translateY(3px); }
+}
+
+@keyframes whiskers-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-2px); }
+  40% { transform: translateX(2px); }
+  60% { transform: translateX(-1px); }
+  80% { transform: translateX(1px); }
+}
+
+/* --- Whisker emotion classes --- */
+.mc-whiskers-twitch #whiskers { animation: whiskers-twitch 0.5s infinite; }
+.mc-whiskers-flare #whiskers { animation: whiskers-flare 0.8s infinite; }
+.mc-whiskers-droopy #whiskers { animation: whiskers-droopy 2s infinite ease-in-out; }
+.mc-whiskers-shake #whiskers { animation: whiskers-shake 0.4s infinite; }
+
+/* ============================================
+   6. TAIL ANIMATIONS (5 patterns)
+   ============================================ */
+
+@keyframes tail-wag-fast {
+  0%, 100% { transform: rotate(0); }
+  25% { transform: rotate(15deg); }
+  75% { transform: rotate(-15deg); }
+}
+
+@keyframes tail-wag-slow {
+  0%, 100% { transform: rotate(0); }
+  50% { transform: rotate(10deg); }
+}
+
+@keyframes tail-bristle {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.3) rotate(5deg); }
+}
+
+@keyframes tail-droopy {
+  0%, 100% { transform: rotate(0); }
+  50% { transform: rotate(-20deg) translateY(5px); }
+}
+
+@keyframes tail-heart {
+  0%, 100% { transform: scale(1) rotate(0); }
+  50% { transform: scale(1.2) rotate(-10deg); filter: hue-rotate(320deg); }
+}
+
+/* --- Tail emotion classes --- */
+.mc-tail-wag-fast #tail-bow { animation: tail-wag-fast 0.3s infinite; }
+.mc-tail-wag-slow #tail-bow { animation: tail-wag-slow 1.5s infinite ease-in-out; }
+.mc-tail-bristle #tail-bow { animation: tail-bristle 0.6s infinite; }
+.mc-tail-droopy #tail-bow { animation: tail-droopy 2s infinite ease-in-out; }
+.mc-tail-heart #tail-bow { animation: tail-heart 1s infinite ease-in-out; }
+
+/* ============================================
+   7. BODY ANIMATIONS (5 patterns)
+   ============================================ */
+
+@keyframes body-bounce-gentle {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+
+@keyframes body-shake-intense {
+  0%, 100% { transform: translate(0); }
+  10% { transform: translate(-3px, 2px); }
+  20% { transform: translate(3px, -2px); }
+  30% { transform: translate(-2px, -3px); }
+  40% { transform: translate(2px, 3px); }
+  50% { transform: translate(-3px, 2px); }
+  60% { transform: translate(3px, -2px); }
+  70% { transform: translate(-2px, 3px); }
+  80% { transform: translate(2px, -3px); }
+  90% { transform: translate(-1px, 1px); }
+}
+
+@keyframes body-sway {
+  0%, 100% { transform: rotate(0); }
+  25% { transform: rotate(3deg); }
+  75% { transform: rotate(-3deg); }
+}
+
+@keyframes body-shrink {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(0.95) translateY(5px); }
+}
+
+@keyframes body-breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.03) translateY(-3px); }
+}
+
+/* --- Body emotion classes --- */
+.mc-body-bounce-gentle #body { animation: body-bounce-gentle 1s infinite ease-in-out; }
+.mc-body-shake-intense #body { animation: body-shake-intense 0.5s infinite; }
+.mc-body-sway #body { animation: body-sway 2s infinite ease-in-out; }
+.mc-body-shrink #body { animation: body-shrink 1.5s infinite ease-in-out; }
+.mc-body-breathe #body { animation: body-breathe 3s infinite ease-in-out; }
+
+/* ============================================
+   8. ARM/PAW ANIMATIONS (6 patterns)
+   ============================================ */
+
+@keyframes arm-wave {
+  0%, 100% { transform: rotate(0); }
+  25% { transform: rotate(-20deg); }
+  75% { transform: rotate(10deg); }
+}
+
+@keyframes arm-fist {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.1) translateX(-3px); }
+}
+
+@keyframes arm-fold {
+  0%, 100% { transform: rotate(0); }
+  50% { transform: rotate(-15deg) translateX(5px); }
+}
+
+@keyframes paw-tremble {
+  0%, 100% { transform: translate(0); }
+  25% { transform: translate(-2px, 1px); }
+  75% { transform: translate(2px, -1px); }
+}
+
+@keyframes paw-reach {
+  0%, 100% { transform: translateX(0); }
+  50% { transform: translateX(15px); }
+}
+
+@keyframes arm-hands-up {
+  0%, 100% { transform: rotate(0); }
+  50% { transform: rotate(-35deg) translateY(-10px); }
+}
+
+/* --- Arm/paw emotion classes --- */
+.mc-arm-wave #left-gesture-arm { animation: arm-wave 0.8s infinite; }
+.mc-arm-fist #left-gesture-arm { animation: arm-fist 0.5s infinite; }
+.mc-arm-fold #left-gesture-arm { animation: arm-fold 1s infinite ease-in-out; }
+.mc-paw-tremble #left-paw { animation: paw-tremble 0.4s infinite; }
+.mc-paw-reach #left-paw { animation: paw-reach 1.5s infinite ease-in-out; }
+.mc-arm-hands-up #left-gesture-arm { animation: arm-hands-up 1.2s infinite ease-in-out; }
+
+/* ============================================
+   9. TRAY/ITEM ANIMATIONS (5 patterns)
+   ============================================ */
+
+@keyframes tray-tilt {
+  0%, 100% { transform: rotate(0); }
+  25% { transform: rotate(-5deg); }
+  75% { transform: rotate(3deg); }
+}
+
+@keyframes tray-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-3px); }
+  40% { transform: translateX(3px); }
+  60% { transform: translateX(-2px); }
+  80% { transform: translateX(2px); }
+}
+
+@keyframes tea-cup-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px) rotate(3deg); }
+}
+
+@keyframes cupcake-bounce {
+  0%, 100% { transform: translateY(0) rotate(0); }
+  50% { transform: translateY(-15px) rotate(-5deg); }
+}
+
+@keyframes tray-throw {
+  0%, 100% { transform: rotate(0); }
+  30% { transform: rotate(-15deg) translateX(-5px); }
+  60% { transform: rotate(10deg) translateX(3px); }
+}
+
+/* --- Tray/item emotion classes --- */
+.mc-tray-tilt #serving-tray { animation: tray-tilt 2s infinite ease-in-out; }
+.mc-tray-shake #serving-tray { animation: tray-shake 0.5s infinite; }
+.mc-tea-cup-float #tea-cup { animation: tea-cup-float 2s infinite ease-in-out; }
+.mc-cupcake-bounce #cupcake { animation: cupcake-bounce 1s infinite ease-in-out; }
+.mc-tray-throw #serving-tray { animation: tray-throw 0.8s infinite; }
+
+/* ============================================
+   10. HEAD/HEADPIECE ANIMATIONS (5 patterns)
+   ============================================ */
+
+@keyframes head-tilt {
+  0%, 100% { transform: rotate(0); }
+  25% { transform: rotate(-5deg); }
+  75% { transform: rotate(3deg); }
+}
+
+@keyframes head-bow {
+  0%, 100% { transform: rotate(0); }
+  50% { transform: rotate(8deg) translateY(5px); }
+}
+
+@keyframes headpiece-shake {
+  0%, 100% { transform: rotate(0); }
+  20% { transform: rotate(-3deg); }
+  40% { transform: rotate(3deg); }
+  60% { transform: rotate(-2deg); }
+  80% { transform: rotate(2deg); }
+}
+
+@keyframes headpiece-fly {
+  0%, 100% { transform: translateY(0) rotate(0); }
+  50% { transform: translateY(-15px) rotate(-10deg); }
+}
+
+@keyframes head-nod {
+  0%, 100% { transform: rotate(0); }
+  50% { transform: rotate(5deg); }
+}
+
+/* --- Head/headpiece emotion classes --- */
+.mc-head-tilt #head { animation: head-tilt 2s infinite ease-in-out; }
+.mc-head-bow #head { animation: head-bow 1.5s infinite ease-in-out; }
+.mc-headpiece-shake #maid-headpiece { animation: headpiece-shake 0.5s infinite; }
+.mc-headpiece-fly #maid-headpiece { animation: headpiece-fly 1s infinite ease-in-out; }
+.mc-head-nod #head { animation: head-nod 1s infinite ease-in-out; }
+
+/* ============================================
+   11. LEGS ANIMATIONS (4 patterns)
+   ============================================ */
+
+@keyframes legs-jump {
+  0%, 100% { transform: translateY(0); }
+  40% { transform: translateY(-15px); }
+  60% { transform: translateY(0); }
+}
+
+@keyframes legs-tremble {
+  0%, 100% { transform: translate(0); }
+  25% { transform: translate(-2px, 1px); }
+  75% { transform: translate(2px, -1px); }
+}
+
+@keyframes legs-cross {
+  0%, 100% { transform: rotate(0); }
+  50% { transform: rotate(-5deg) translateX(3px); }
+}
+
+@keyframes legs-kick {
+  0%, 100% { transform: rotate(0); }
+  30% { transform: rotate(-15deg); }
+  60% { transform: rotate(5deg); }
+}
+
+/* --- Legs emotion classes --- */
+.mc-legs-jump #legs { animation: legs-jump 1s infinite; }
+.mc-legs-tremble #legs { animation: legs-tremble 0.3s infinite; }
+.mc-legs-cross #legs { animation: legs-cross 2s infinite ease-in-out; }
+.mc-legs-kick #legs { animation: legs-kick 0.8s infinite; }
+
+/* ============================================
+   12. BACKGROUND UI ANIMATIONS (5 patterns)
+   ============================================ */
+
+@keyframes ui-glitch {
+  0%, 100% { filter: none; transform: translate(0); }
+  20% { filter: hue-rotate(90deg); transform: translate(-3px); }
+  40% { filter: hue-rotate(180deg) brightness(1.2); transform: translate(3px); }
+  60% { filter: hue-rotate(270deg); transform: translate(-2px); }
+  80% { filter: hue-rotate(45deg) brightness(0.9); transform: translate(2px); }
+}
+
+@keyframes ui-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes ui-pulse {
+  0%, 100% { opacity: 0.8; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.05); }
+}
+
+@keyframes ui-sparkle-explode {
+  0%, 100% { transform: scale(1); opacity: 0.78; }
+  50% { transform: scale(1.5); opacity: 1; filter: brightness(1.5); }
+}
+
+@keyframes ui-flicker {
+  0%, 100% { opacity: 1; }
+  10% { opacity: 0.5; }
+  20% { opacity: 1; }
+  30% { opacity: 0.3; }
+  40% { opacity: 1; }
+  50% { opacity: 0.7; }
+  60% { opacity: 1; }
+}
+
+/* --- Background UI emotion classes --- */
+.mc-ui-glitch #pet-interface { animation: ui-glitch 2s infinite; }
+.mc-ui-spin #pet-interface { animation: ui-spin 10s linear infinite; }
+.mc-ui-pulse #pet-interface { animation: ui-pulse 2s infinite ease-in-out; }
+.mc-ui-sparkle-explode #avatar-sparkles { animation: ui-sparkle-explode 1s infinite ease-in-out; }
+.mc-ui-flicker #pet-interface { animation: ui-flicker 1s infinite; }
+
+/* ============================================
+   13. WAIST BOW / FRILLS ANIMATIONS (4 patterns)
+   ============================================ */
+
+@keyframes waist-bow-flutter {
+  0%, 100% { transform: rotate(0); }
+  25% { transform: rotate(-8deg); }
+  75% { transform: rotate(8deg); }
+}
+
+@keyframes frills-wave {
+  0%, 100% { transform: skewX(0); }
+  25% { transform: skewX(5deg); }
+  75% { transform: skewX(-5deg); }
+}
+
+@keyframes frills-spin {
+  0%, 100% { transform: rotate(0); }
+  50% { transform: rotate(10deg); }
+}
+
+@keyframes waist-bow-bounce {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-8px) scale(1.1); }
+}
+
+/* --- Waist/frills emotion classes --- */
+.mc-waist-bow-flutter #waist-bow { animation: waist-bow-flutter 1.5s infinite ease-in-out; }
+.mc-frills-wave #frills { animation: frills-wave 2s infinite ease-in-out; }
+.mc-frills-spin #frills { animation: frills-spin 3s infinite ease-in-out; }
+.mc-waist-bow-bounce #waist-bow { animation: waist-bow-bounce 1s infinite ease-in-out; }

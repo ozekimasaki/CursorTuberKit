@@ -125,6 +125,10 @@ export type DopamineState = {
   lastDirectorDecision: DirectorDecision | null
   /** Active generated effects applied */
   activeGeneratedEffects: GeneratedEffect[]
+  /** Current emotion tag for maid cat SVG expression */
+  currentEmotionTag: string
+  /** CSS class string for maid cat part animations */
+  maidCatExpressionClasses: string
 }
 
 export const DEFAULT_VISUAL_MUTATION: VisualMutationParams = {
@@ -158,6 +162,8 @@ export function createDefaultDopamineState(): DopamineState {
     activeCue: null,
     lastDirectorDecision: null,
     activeGeneratedEffects: [],
+    currentEmotionTag: "neutral",
+    maidCatExpressionClasses: "",
   }
 }
 

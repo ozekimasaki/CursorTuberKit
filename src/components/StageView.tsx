@@ -172,6 +172,7 @@ export function StageView({
                   state={avatarState}
                   viseme={viseme}
                   sinSignal={sinSignal}
+                  expressionClasses={dopamineState?.maidCatExpressionClasses}
                 />
               </div>
             )}
