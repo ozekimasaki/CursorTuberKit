@@ -1,13 +1,24 @@
-import { useEffect, useMemo, useRef } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import type { DopamineState } from "../../shared/dopamineMutation"
 
-/**
- * Renders dopamine visual effects as CSS variable overrides.
- *
- * - Glitch: clip-path + filter animation during morphing
- * - Hue shift: background filter during morphed state
- * - Glow: box-shadow on the stage frame during morphed state
- */
+const GLITCH_VARIANTS = [
+  "dopamine-invert-flash",
+  "dopamine-scale-jump",
+  "dopamine-blur-pulse",
+  "dopamine-slice-shift",
+  "dopamine-chromatic-warp",
+  "dopamine-scanline-flicker",
+  "dopamine-matrix-rain",
+  "dopamine-frame-drop",
+  "dopamine-data-moshing",
+  "dopamine-shake",
+]
+
+function pickGlitchVariants(count: number): string[] {
+  const shuffled = [...GLITCH_VARIANTS].sort(() => Math.random() - 0.5)
+  return shuffled.slice(0, count)
+}
+
 export type DopamineEffectsProps = {
   state: DopamineState
   children: React.ReactNode
@@ -15,101 +26,98 @@ export type DopamineEffectsProps = {
 
 export function DopamineEffects({ state, children }: DopamineEffectsProps) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const { visual, phase } = state
+  const effectsRef = useRef<HTMLDivElement>(null)
+  const { visual, phase, activeCue } = state
+  const [glitchClasses, setGlitchClasses] = useState<string[]>([])
+  const [shakeActive, setShakeActive] = useState(false)
+  const prevCueRef = useRef<string | undefined>(undefined)
+
+  const isGlitching = phase === "morphing" || phase === "triggered"
+  const isShaking = visual.shakeIntensity > 0.3
+
+  // Trigger random glitches on new cue
+  useEffect(() => {
+    const cueId = activeCue?.receivedAt
+    if (cueId && cueId !== prevCueRef.current) {
+      prevCueRef.current = cueId
+      // 80% chance of 2 glitches, 40% chance of 3
+      const variantCount = Math.random() < 0.4 ? 3 : Math.random() < 0.8 ? 2 : 1
+      const variants = pickGlitchVariants(variantCount)
+      setGlitchClasses(variants)
+      setShakeActive(true)
+
+      // Duration: 1.5s ~ 3.0s based on intensity
+      const duration = 1500 + (visual.glitchIntensity ?? 0.5) * 1500
+      const timer = setTimeout(() => {
+        setGlitchClasses([])
+        setShakeActive(false)
+      }, duration)
+      return () => clearTimeout(timer)
+    }
+  }, [activeCue, visual.glitchIntensity])
 
   const styleVars = useMemo(() => {
-    const bg = `hue-rotate(${visual.backgroundHueShift}deg) saturate(${visual.backgroundSatMul})`
     return {
-      "--dopamine-bg-filter": bg,
       "--dopamine-caption-color": visual.captionColor ?? "",
       "--dopamine-caption-weight": String(visual.captionWeight),
       "--dopamine-caption-size-mul": String(visual.captionSizeMul),
-      "--dopamine-glitch-intensity": String(visual.glitchIntensity),
       "--dopamine-shake-intensity": String(visual.shakeIntensity),
       "--dopamine-glow-color": visual.frameGlowColor ?? "transparent",
     } as React.CSSProperties
   }, [visual])
-
-  // Apply glitch class during morphing
-  const isGlitching = phase === "morphing" || phase === "triggered"
-  const isShaking = visual.shakeIntensity > 0.3
-
-  useEffect(() => {
-    const el = containerRef.current
-    if (!el) return
-
-    if (isGlitching) {
-      el.classList.add("dopamine-glitching")
-    } else {
-      el.classList.remove("dopamine-glitching")
-    }
-
-    if (isShaking) {
-      el.classList.add("dopamine-shaking")
-    } else {
-      el.classList.remove("dopamine-shaking")
-    }
-  }, [isGlitching, isShaking])
 
   return (
     <div
       ref={containerRef}
       className="dopamine-effects"
       style={styleVars}
-      aria-hidden="true"
     >
-      {/* Background hue overlay */}
-      {(phase === "morphed" || phase === "morphing") && (
-        <div
-          className="dopamine-effects__bg-overlay"
-          style={{
-            position: "absolute",
-            inset: 0,
-            pointerEvents: "none",
-            zIndex: 5,
-            backdropFilter: `var(--dopamine-bg-filter)`,
-            WebkitBackdropFilter: `var(--dopamine-bg-filter)`,
-            opacity: 0.25,
-            transition: "opacity 0.3s ease",
-          }}
-        />
-      )}
-
-      {/* Frame glow */}
-      {visual.frameGlowColor && (
-        <div
-          className="dopamine-effects__glow"
-          style={{
-            position: "absolute",
-            inset: 0,
-            pointerEvents: "none",
-            zIndex: 6,
-            boxShadow: `inset 0 0 60px 20px var(--dopamine-glow-color)`,
-            opacity: 0.6,
-            transition: "opacity 0.5s ease",
-          }}
-        />
-      )}
-
-      {/* Glitch layers */}
-      {isGlitching && (
-        <>
+      {/* Visual effects layer (glitches apply here, NOT on children) */}
+      <div
+        ref={effectsRef}
+        className={[
+          "dopamine-effects__layer",
+          isGlitching ? "dopamine-glitching" : "",
+          shakeActive || isShaking ? "dopamine-shaking" : "",
+          ...glitchClasses,
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        style={{
+          position: "absolute",
+          inset: 0,
+          pointerEvents: "none",
+          zIndex: 5,
+        }}
+        aria-hidden="true"
+      >
+        {/* Frame glow */}
+        {visual.frameGlowColor && (
           <div
-            className="dopamine-effects__glitch-layer dopamine-effects__glitch-layer--r"
-            aria-hidden="true"
+            className="dopamine-effects__glow"
+            style={{
+              position: "absolute",
+              inset: 0,
+              boxShadow: `inset 0 0 60px 20px var(--dopamine-glow-color)`,
+              opacity: 0.6,
+              transition: "opacity 0.5s ease",
+            }}
           />
-          <div
-            className="dopamine-effects__glitch-layer dopamine-effects__glitch-layer--g"
-            aria-hidden="true"
-          />
-          <div
-            className="dopamine-effects__glitch-layer dopamine-effects__glitch-layer--b"
-            aria-hidden="true"
-          />
-        </>
-      )}
+        )}
+      </div>
 
-      {children}
+      {/* Protected content layer (captions, comments, avatar) - NO glitches */}
+      <div
+        className="dopamine-effects__content"
+        style={{
+          position: "relative",
+          zIndex: 10,
+          width: "100%",
+          height: "100%",
+        }}
+      >
+        {children}
+      </div>
     </div>
   )
 }

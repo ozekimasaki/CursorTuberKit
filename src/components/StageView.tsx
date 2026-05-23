@@ -106,9 +106,13 @@ export function StageView({
     } as CSSProperties
   }, [captionFont, captionStyle, dopamineState])
 
+  const emotionClass = dopamineState?.activeCue?.emotionTag
+    ? `dopamine-character-${dopamineState.activeCue.emotionTag}`
+    : ""
+
   return (
     <main
-      className={`stage-view${embedded ? " stage-view--embedded" : ""}`}
+      className={`stage-view${embedded ? " stage-view--embedded" : ""} ${emotionClass}`}
       aria-label="配信用ステージ"
     >
       {stageBackgroundMedia?.kind === "image" && (

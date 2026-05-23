@@ -182,10 +182,10 @@ export function cueToVisualParams(cue: MutationCue): VisualMutationParams {
     captionColor: pickCaptionColor(cue.emotionTag ?? "neutral"),
     captionWeight: 400 + Math.floor(baseIntensity * 300),
     captionSizeMul: 1 + baseIntensity * 0.3,
-    glitchIntensity: cue.kind === "chain_reaction" ? 0.6 : baseIntensity * 0.5,
-    shakeIntensity: cue.kind === "chain_reaction" ? 0.8 : baseIntensity * 0.4,
+    glitchIntensity: cue.kind === "chain_reaction" ? 0.95 : Math.min(1.0, baseIntensity * 1.2),
+    shakeIntensity: cue.kind === "chain_reaction" ? 1.0 : Math.min(1.0, baseIntensity * 1.0),
     frameGlowColor: pickGlowColor(cue.emotionTag ?? "neutral"),
-    morphDurationMs: 2000 + Math.floor(baseIntensity * 2000),
+    morphDurationMs: 1500 + Math.floor(baseIntensity * 1500),
     backgroundPresetId: emotionToBackgroundPresetId(cue.emotionTag ?? "neutral"),
   }
 }
