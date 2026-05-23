@@ -5,6 +5,7 @@ const MOTIONPNG_SETTINGS_KEY = "ctk.motionpng.settings"
 const SVG_SETTINGS_KEY = "ctk.svg.settings"
 const AVATAR_MODE_KEY = "ctk.avatar.mode"
 const SVG_CHARACTER_KEY = "ctk.svg.character"
+const STAGE_BACKGROUND_KEY = "ctk.stage.background"
 
 export type StageCaptionStyle = {
   fontId: string
@@ -185,10 +186,47 @@ export function saveSvgCharacter(character: SvgCharacterId): void {
   }
 }
 
+export type SavedStageBackground =
+  | { kind: "preset"; id: string }
+  | { kind: "image"; name: string }
+  | { kind: "video"; name: string }
+
+export function loadStageBackground(): SavedStageBackground | null {
+  const ls = safeLocalStorage()
+  if (!ls) return null
+  try {
+    const raw = ls.getItem(STAGE_BACKGROUND_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as Partial<SavedStageBackground>
+    if (parsed.kind === "preset" && typeof parsed.id === "string") {
+      return { kind: "preset", id: parsed.id }
+    }
+    // image/video の URL はセッションを超えて無効になるため復元しない
+    return null
+  } catch {
+    return null
+  }
+}
+
+export function saveStageBackground(background: SavedStageBackground | null): void {
+  const ls = safeLocalStorage()
+  if (!ls) return
+  try {
+    if (background?.kind === "preset") {
+      ls.setItem(STAGE_BACKGROUND_KEY, JSON.stringify({ kind: "preset", id: background.id }))
+    } else {
+      ls.removeItem(STAGE_BACKGROUND_KEY)
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
 export const stagePreferenceStorageKeys = {
   stageDisplay: STAGE_DISPLAY_KEY,
   motionPngSettings: MOTIONPNG_SETTINGS_KEY,
   svgSettings: SVG_SETTINGS_KEY,
   avatarMode: AVATAR_MODE_KEY,
   svgCharacter: SVG_CHARACTER_KEY,
+  stageBackground: STAGE_BACKGROUND_KEY,
 } as const

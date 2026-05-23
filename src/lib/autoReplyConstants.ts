@@ -1,5 +1,5 @@
 // 音声セグメント間の自然な間。短すぎると詰まり、長すぎると間延びする。
-export const QUEUED_PLAYBACK_GAP_MS = 350
+export const QUEUED_PLAYBACK_GAP_MS = 150
 // 視聴者コメントのキュー上限。これを超えると backlog spiral になりやすい。
 export const MAX_QUEUED_VIEWER_EVENTS = 12
 // 自動返信の再試行回数（abort 以外の失敗時）。
@@ -7,11 +7,11 @@ export const MAX_AUTO_REPLY_RETRY_ATTEMPTS = 2
 // 返信生成の並列度。playback は直列だが、生成は先回りで並列化して "次ネタ待ち" を短縮する。
 export const MAX_CONCURRENT_AUTO_REPLY_GENERATIONS = 2
 // コメントをまとめて返すトリガー件数。これに達したら compact 返信に切り替える。
-export const COMPACT_REPLY_TRIGGER_COUNT = 6
+export const COMPACT_REPLY_TRIGGER_COUNT = 3
 // 1 回の compact 返信で扱うコメント数の上限。これ以上は AI が破綻しやすい。
 export const COMPACT_REPLY_BATCH_SIZE = 6
 // 「コメント順番に読んでいくね」を挟むまでの待ち時間。視聴者に preview を見せる余白。
-export const AUTO_REPLY_BRIDGE_DELAY_MS = 1200
+export const AUTO_REPLY_BRIDGE_DELAY_MS = 600
 export const AUTO_REPLY_BRIDGE_TEXT = "コメント順番に読んでいくね。"
 // 直近何ターンを文脈として AI に渡すか。context 窓と質のバランスから 8 が経験則。
 export const RECENT_TURNS_CONTEXT_SIZE = 8

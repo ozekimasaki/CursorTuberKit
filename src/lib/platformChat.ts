@@ -1,3 +1,4 @@
+import { API_BASE } from "./apiBase"
 import type {
   PlatformChatMode,
   PlatformChatStateResponse,
@@ -9,7 +10,7 @@ type StartPlatformChatRequest = {
 }
 
 export async function fetchPlatformChatState(signal?: AbortSignal): Promise<PlatformChatStateResponse> {
-  const response = await fetch("/api/platform-chat/state", { signal })
+  const response = await fetch(`${API_BASE}/api/platform-chat/state`, { signal })
 
   if (!response.ok) {
     throw new Error(await readErrorMessage(response, "配信コメント状態の取得に失敗しました。"))
@@ -22,7 +23,7 @@ export async function startPlatformChat(
   body: StartPlatformChatRequest,
   signal?: AbortSignal,
 ): Promise<PlatformChatStateResponse> {
-  const response = await fetch("/api/platform-chat/start", {
+  const response = await fetch(`${API_BASE}/api/platform-chat/start`, {
     body: JSON.stringify(body),
     headers: {
       "Content-Type": "application/json",
@@ -39,7 +40,7 @@ export async function startPlatformChat(
 }
 
 export async function stopPlatformChat(signal?: AbortSignal): Promise<PlatformChatStateResponse> {
-  const response = await fetch("/api/platform-chat/stop", {
+  const response = await fetch(`${API_BASE}/api/platform-chat/stop`, {
     method: "POST",
     signal,
   })

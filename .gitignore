@@ -15,3 +15,6 @@ config/local.json
 
 # Local SVG inspection artifacts
 tools/out/
+
+# Tauri build artifacts
+src-tauri/target/

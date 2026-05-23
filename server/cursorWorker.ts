@@ -23,6 +23,7 @@ import { createCursorLocalOptions } from "./cursorLocalOptions.js"
 type CursorWorkerInput = {
   compactPrompt?: string
   compiledPrompt: string
+  inputKind?: "viewer-comment" | "self-driven"
   route: ChatMetadataPayload
   session: {
     browserSessionId: string
@@ -285,30 +286,41 @@ try {
       characterArtifactsResult.payload,
       Boolean(stopHookPayload),
     )
-    const hookEmotionDrift = await applyHookDrivenCharacterDrift({
-      apiKey,
-      artifacts: characterArtifactsResult.payload,
-      assistantText: normalizedResponse,
-      browserSessionId: input.session.browserSessionId,
-      currentSins: await readCharacterRuntimeSinValues(),
-      emotionModel,
-      providerSessionId: agent.agentId,
-      requestRunId: run.id,
-      stopHookPayload,
-    })
-    if (hookEmotionDrift.telemetry) {
-      await appendRunTelemetry(hookEmotionDrift.telemetry)
+
+    if (input.inputKind === "viewer-comment") {
+      const hookEmotionDrift = await applyHookDrivenCharacterDrift({
+        apiKey,
+        artifacts: characterArtifactsResult.payload,
+        assistantText: normalizedResponse,
+        browserSessionId: input.session.browserSessionId,
+        currentSins: await readCharacterRuntimeSinValues(),
+        emotionModel,
+        providerSessionId: agent.agentId,
+        requestRunId: run.id,
+        stopHookPayload,
+      })
+      if (hookEmotionDrift.telemetry) {
+        await appendRunTelemetry(hookEmotionDrift.telemetry)
+      }
+      writeAction({
+        detail:
+          finalEmotion.source === "cursor-subagent"
+            ? `${finalEmotion.hookObserved ? "Character Director の感情分析を stop hook 観測つきで確定しました。" : "Character Director の感情分析を再利用して最終感情を確定しました。"} ${hookEmotionDrift.detail}`
+            : `Character artifacts が使えないため本文から感情を推定しました。${hookEmotionDrift.detail}`,
+        kind: "emotion-finalize",
+        provider: "cursor",
+        source: finalEmotion.source,
+        status: "completed",
+      })
+    } else {
+      writeAction({
+        detail: `inputKind が "${input.inputKind ?? "self-driven"}" のため、seven deadly sins の hidden state 更新をスキップしました。`,
+        kind: "emotion-finalize",
+        provider: "cursor",
+        source: finalEmotion.source,
+        status: "skipped",
+      })
     }
-    writeAction({
-      detail:
-        finalEmotion.source === "cursor-subagent"
-          ? `${finalEmotion.hookObserved ? "Character Director の感情分析を stop hook 観測つきで確定しました。" : "Character Director の感情分析を再利用して最終感情を確定しました。"} ${hookEmotionDrift.detail}`
-          : `Character artifacts が使えないため本文から感情を推定しました。${hookEmotionDrift.detail}`,
-      kind: "emotion-finalize",
-      provider: "cursor",
-      source: finalEmotion.source,
-      status: "completed",
-    })
   } catch (error) {
     if (receivedTerminationSignal) {
       throw error

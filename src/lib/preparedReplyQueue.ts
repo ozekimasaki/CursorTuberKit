@@ -4,6 +4,7 @@ import type { ModerationAssessment } from "../../shared/moderation"
 
 export type PreparedAutoReply = {
   action: AutomationAction | null
+  audioSegments?: Array<{ blob: Blob; emotion: Emotion; text: string }>
   finalEmotion: Emotion | null
   id: string
   isMonetized: boolean

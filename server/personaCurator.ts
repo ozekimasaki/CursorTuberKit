@@ -15,7 +15,7 @@ import { disposeAgentSafely, extractJsonObject, truncate, withTimeout } from "./
 
 const PERSONA_CURATOR_NAME = "persona-curator"
 const PERSONA_CRITIC_NAME = "persona-critic"
-const CURATOR_TIMEOUT_MS = 12000
+const CURATOR_TIMEOUT_MS = 30000
 
 type RunPersonaCuratorOptions = {
   apiKey: string

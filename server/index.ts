@@ -440,6 +440,7 @@ app.post("/api/chat/stream", async (request: Request<Record<string, never>, unkn
     await streamAiResponse(provider, {
       compactPrompt: provider === "cursor" ? promptBundle.resumePrompt : undefined,
       compiledPrompt: promptBundle.fullPrompt,
+      inputKind,
       onEmotion: (payload) => {
         finalEmotion = payload
         runtimeStatusTracker.setChatEmotion(runId, payload)

@@ -1,10 +1,11 @@
+import { API_BASE } from "./apiBase"
 import type { AutopilotTopicRequestBody, AutopilotTopicResponse } from "../../shared/autopilot"
 
 export async function requestAutopilotTopic(
   body: AutopilotTopicRequestBody,
   signal?: AbortSignal,
 ): Promise<AutopilotTopicResponse> {
-  const response = await fetch("/api/autopilot/topic", {
+  const response = await fetch(`${API_BASE}/api/autopilot/topic`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),

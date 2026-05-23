@@ -89,6 +89,10 @@ type SettingsModalProps = {
   settingsSaveBusy: boolean
   settingsSaveNotice: string | null
   uiSettingsDirty: boolean
+  audioOutputDeviceId: string | null
+  audioOutputDevices: { deviceId: string; label: string }[]
+  audioOutputSupported: boolean
+  onAudioOutputDeviceChange: (deviceId: string | null) => void
   onPersonaAutoRewriteRequest: () => void | Promise<void>
   personaAutoRewriteBusy: boolean
   personaAutoRewriteNotice: string | null
@@ -145,6 +149,10 @@ export function SettingsModal(props: SettingsModalProps) {
     settingsSaveBusy,
     settingsSaveNotice,
     uiSettingsDirty,
+    audioOutputDeviceId,
+    audioOutputDevices,
+    audioOutputSupported,
+    onAudioOutputDeviceChange,
     onPersonaAutoRewriteRequest,
     personaAutoRewriteBusy,
     personaAutoRewriteNotice,
@@ -1041,6 +1049,24 @@ export function SettingsModal(props: SettingsModalProps) {
                   既定値に戻す
                 </button>
               </div>
+              {audioOutputSupported && (
+                <div className="card__row">
+                  <span className="card__key">出力デバイス</span>
+                  <select
+                    className="field__input"
+                    style={{ flex: "0 0 220px", minHeight: 32 }}
+                    value={audioOutputDeviceId ?? ""}
+                    onChange={(e) => onAudioOutputDeviceChange(e.target.value || null)}
+                  >
+                    <option value="">システム既定</option>
+                    {audioOutputDevices.map((d) => (
+                      <option key={d.deviceId} value={d.deviceId}>
+                        {d.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
           </section>
 

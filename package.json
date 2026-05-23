@@ -29,7 +29,12 @@
     "memkraft:stop": "node scripts/tasks.mjs memkraft:stop",
     "voicevox:start": "node scripts/tasks.mjs voicevox:start",
     "voicevox:status": "node scripts/tasks.mjs voicevox:status",
-    "voicevox:stop": "node scripts/tasks.mjs voicevox:stop"
+    "voicevox:stop": "node scripts/tasks.mjs voicevox:stop",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
+    "dev:all": "node scripts/tasks.mjs dev:tauri",
+    "build:all": "npm run build:server && npm run build:client && npm run tauri:build"
   },
   "dependencies": {
     "@cursor/sdk": "^1.0.7",
@@ -50,6 +55,7 @@
     "undici": "^8.1.0"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.11.2",
     "@types/express": "^4.17.21",
     "@types/node": "^22.10.2",
     "@types/react": "^18.3.12",

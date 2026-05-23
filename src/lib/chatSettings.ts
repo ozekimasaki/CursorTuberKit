@@ -1,3 +1,4 @@
+import { API_BASE } from "./apiBase"
 import type { ChatSettings, ChatSettingsPatch } from "../../shared/chatSettings"
 import type { CharacterPreset, CharacterPresetInput } from "../../shared/characterPresets"
 
@@ -10,7 +11,7 @@ type DeleteCharacterPresetResponse = {
 }
 
 export async function fetchChatSettings(signal?: AbortSignal): Promise<ChatSettings> {
-  const response = await fetch("/api/chat-settings", { signal })
+  const response = await fetch(`${API_BASE}/api/chat-settings`, { signal })
 
   if (!response.ok) {
     throw new Error(await readErrorMessage(response, "設定の取得に失敗しました。"))
@@ -23,7 +24,7 @@ export async function updateChatSettings(
   body: ChatSettingsPatch,
   signal?: AbortSignal,
 ): Promise<ChatSettings> {
-  const response = await fetch("/api/chat-settings", {
+  const response = await fetch(`${API_BASE}/api/chat-settings`, {
     body: JSON.stringify(body),
     headers: {
       "Content-Type": "application/json",
@@ -40,7 +41,7 @@ export async function updateChatSettings(
 }
 
 export async function clearChatMemory(signal?: AbortSignal): Promise<ClearChatMemoryResponse> {
-  const response = await fetch("/api/chat-settings/memory/clear", {
+  const response = await fetch(`${API_BASE}/api/chat-settings/memory/clear`, {
     method: "POST",
     signal,
   })
@@ -53,7 +54,7 @@ export async function clearChatMemory(signal?: AbortSignal): Promise<ClearChatMe
 }
 
 export async function fetchCharacterPresets(signal?: AbortSignal): Promise<CharacterPreset[]> {
-  const response = await fetch("/api/chat-settings/presets", { signal })
+  const response = await fetch(`${API_BASE}/api/chat-settings/presets`, { signal })
 
   if (!response.ok) {
     throw new Error(await readErrorMessage(response, "プリセットの取得に失敗しました。"))
@@ -66,7 +67,7 @@ export async function createCharacterPreset(
   body: CharacterPresetInput,
   signal?: AbortSignal,
 ): Promise<CharacterPreset> {
-  const response = await fetch("/api/chat-settings/presets", {
+  const response = await fetch(`${API_BASE}/api/chat-settings/presets`, {
     body: JSON.stringify(body),
     headers: {
       "Content-Type": "application/json",
@@ -87,7 +88,7 @@ export async function updateCharacterPreset(
   body: CharacterPresetInput,
   signal?: AbortSignal,
 ): Promise<CharacterPreset> {
-  const response = await fetch(`/api/chat-settings/presets/${encodeURIComponent(presetId)}`, {
+  const response = await fetch(`${API_BASE}/api/chat-settings/presets/${encodeURIComponent(presetId)}`, {
     body: JSON.stringify(body),
     headers: {
       "Content-Type": "application/json",
@@ -107,7 +108,7 @@ export async function deleteCharacterPreset(
   presetId: string,
   signal?: AbortSignal,
 ): Promise<DeleteCharacterPresetResponse> {
-  const response = await fetch(`/api/chat-settings/presets/${encodeURIComponent(presetId)}`, {
+  const response = await fetch(`${API_BASE}/api/chat-settings/presets/${encodeURIComponent(presetId)}`, {
     method: "DELETE",
     signal,
   })

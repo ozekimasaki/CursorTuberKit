@@ -37,6 +37,7 @@ export function validateCursorConfiguration() {
 export async function streamCursorResponse({
   compactPrompt,
   compiledPrompt,
+  inputKind,
   onEmotion,
   onSupportingEvent,
   onText,
@@ -75,6 +76,7 @@ export async function streamCursorResponse({
     JSON.stringify({
       compactPrompt: compactPrompt?.trim() || undefined,
       compiledPrompt,
+      inputKind,
       route,
       session,
     }),

@@ -1,7 +1,8 @@
+import { API_BASE } from "./apiBase"
 import type { AppSettings } from "../../shared/appSettings"
 
 export async function fetchAppSettings(signal?: AbortSignal): Promise<AppSettings> {
-  const response = await fetch("/api/app-settings", { signal })
+  const response = await fetch(`${API_BASE}/api/app-settings`, { signal })
   if (!response.ok) {
     throw new Error(await readErrorMessage(response, "設定の取得に失敗しました。"))
   }
@@ -9,7 +10,7 @@ export async function fetchAppSettings(signal?: AbortSignal): Promise<AppSetting
 }
 
 export async function saveAppSettings(settings: AppSettings, signal?: AbortSignal): Promise<AppSettings> {
-  const response = await fetch("/api/app-settings", {
+  const response = await fetch(`${API_BASE}/api/app-settings`, {
     body: JSON.stringify(settings),
     headers: {
       "Content-Type": "application/json",

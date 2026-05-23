@@ -3,6 +3,7 @@ import type { MotionPngAudioAnalysis } from "./avatarConfig"
 
 type PlayAudioOptions = {
   onAnalysis?: (analysis: MotionPngAudioAnalysis) => void
+  outputDeviceId?: string
   text?: string
   onEnded: () => void
   onError: (error: Error) => void
@@ -20,7 +21,22 @@ export async function playAudioBlob(blob: Blob, options: PlayAudioOptions): Prom
   const audioUrl = URL.createObjectURL(blob)
   const audio = new Audio(audioUrl)
   const AudioContextClass = window.AudioContext ?? window.webkitAudioContext
+
+  // Route AudioContext itself to the requested output device when supported.
+  // This is more reliable than HTMLAudioElement.setSinkId because
+  // createMediaElementSource() hijacks the audio element output into the graph.
   const audioContext = AudioContextClass ? new AudioContextClass() : null
+
+  if (audioContext && options.outputDeviceId && "setSinkId" in audioContext) {
+    try {
+      await (
+        audioContext as unknown as { setSinkId(id: string): Promise<void> }
+      ).setSinkId(options.outputDeviceId)
+    } catch {
+      // Fallback to default output if the requested sink is unavailable.
+    }
+  }
+
   const analyser = audioContext?.createAnalyser() ?? null
   const source = audioContext ? audioContext.createMediaElementSource(audio) : null
   const frequencyData = analyser ? new Uint8Array(analyser.frequencyBinCount) : null

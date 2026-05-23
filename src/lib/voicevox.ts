@@ -17,8 +17,10 @@ export type VoicevoxSpeakerGroup = {
   styles: VoicevoxSpeakerStyle[]
 }
 
+import { API_BASE } from "./apiBase"
+
 export async function fetchVoicevoxHealth(signal?: AbortSignal): Promise<VoicevoxHealth> {
-  const response = await fetch("/api/voicevox/health", { signal })
+  const response = await fetch(`${API_BASE}/api/voicevox/health`, { signal })
 
   if (!response.ok) {
     throw new Error("VOICEVOXの状態確認に失敗しました。")
@@ -28,7 +30,7 @@ export async function fetchVoicevoxHealth(signal?: AbortSignal): Promise<Voicevo
 }
 
 export async function fetchVoicevoxSpeakers(signal?: AbortSignal): Promise<VoicevoxSpeakerGroup[]> {
-  const response = await fetch("/api/voicevox/speakers", { signal })
+  const response = await fetch(`${API_BASE}/api/voicevox/speakers`, { signal })
 
   if (!response.ok) {
     throw new Error(await readErrorMessage(response))
@@ -39,7 +41,7 @@ export async function fetchVoicevoxSpeakers(signal?: AbortSignal): Promise<Voice
 }
 
 export async function synthesizeVoice(text: string, signal: AbortSignal): Promise<Blob> {
-  const response = await fetch("/api/voicevox/synthesis", {
+  const response = await fetch(`${API_BASE}/api/voicevox/synthesis`, {
     body: JSON.stringify({ text }),
     headers: {
       "Content-Type": "application/json",

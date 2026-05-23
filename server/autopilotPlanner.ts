@@ -20,7 +20,7 @@ import { applyLexicalPenalty, computeLexicalOverlapPenalty } from "./lib/lexical
 const TOPIC_PLANNER_NAME = "topic-planner"
 const NOVELTY_CRITIC_NAME = "novelty-critic"
 
-const PLANNER_TIMEOUT_MS = 8000
+const PLANNER_TIMEOUT_MS = 25000
 const MAX_PROMPT_CHARS = 8000
 
 type RunAutopilotPlannerOptions = {

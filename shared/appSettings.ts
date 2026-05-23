@@ -44,9 +44,16 @@ export type StageDisplayPreferences = {
   captionStyle: StageCaptionStyle
 }
 
+export type StageBackgroundPreset = {
+  kind: "preset"
+  id: string
+}
+
 export type AppUiSettings = {
+  audioOutputDeviceId: string | null
   avatarMode: AvatarMode
   motionPngSettings: MotionPngSettings
+  stageBackground: StageBackgroundPreset | null
   stageDisplay: StageDisplayPreferences
   svgAvatarSettings: SvgAvatarSettings
   svgCharacter: SvgCharacterId
@@ -98,8 +105,10 @@ export const defaultStageDisplayPreferences: StageDisplayPreferences = {
 
 export function createDefaultAppUiSettings(): AppUiSettings {
   return {
+    audioOutputDeviceId: null,
     avatarMode: "svg",
     motionPngSettings: defaultMotionPngSettings,
+    stageBackground: null,
     stageDisplay: defaultStageDisplayPreferences,
     svgAvatarSettings: defaultSvgAvatarSettings,
     svgCharacter: "maid_cat",
@@ -137,13 +146,24 @@ export function applyAppSettingsPatch(base: AppSettings, patch: AppSettingsPatch
 export function normalizeAppUiSettings(value: unknown, fallback = createDefaultAppUiSettings()): AppUiSettings {
   const raw = isRecord(value) ? value : {}
   return {
+    audioOutputDeviceId:
+      typeof raw.audioOutputDeviceId === "string" ? raw.audioOutputDeviceId : fallback.audioOutputDeviceId,
     avatarMode: raw.avatarMode === "motionpng" || raw.avatarMode === "svg" ? raw.avatarMode : fallback.avatarMode,
     motionPngSettings: normalizeMotionPngSettings(raw.motionPngSettings, fallback.motionPngSettings),
+    stageBackground: normalizeStageBackground(raw.stageBackground, fallback.stageBackground),
     stageDisplay: normalizeStageDisplayPreferences(raw.stageDisplay, fallback.stageDisplay),
     svgAvatarSettings: normalizeSvgAvatarSettings(raw.svgAvatarSettings, fallback.svgAvatarSettings),
     svgCharacter:
       raw.svgCharacter === "maid_cat" || raw.svgCharacter === "catlin_v2" ? raw.svgCharacter : fallback.svgCharacter,
   }
+}
+
+function normalizeStageBackground(value: unknown, fallback: StageBackgroundPreset | null): StageBackgroundPreset | null {
+  if (!isRecord(value)) return fallback
+  if (value.kind === "preset" && typeof value.id === "string") {
+    return { kind: "preset", id: value.id }
+  }
+  return fallback
 }
 
 function normalizeSvgAvatarSettings(value: unknown, fallback: SvgAvatarSettings): SvgAvatarSettings {

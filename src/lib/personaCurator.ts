@@ -1,3 +1,4 @@
+import { API_BASE } from "./apiBase"
 import type {
   PersonaAutoRewriteRequestBody,
   PersonaAutoRewriteResponse,
@@ -7,7 +8,7 @@ export async function requestPersonaAutoRewrite(
   body: PersonaAutoRewriteRequestBody,
   signal?: AbortSignal,
 ): Promise<PersonaAutoRewriteResponse> {
-  const response = await fetch("/api/character/auto-rewrite", {
+  const response = await fetch(`${API_BASE}/api/character/auto-rewrite`, {
     body: JSON.stringify(body),
     headers: { "Content-Type": "application/json" },
     method: "POST",

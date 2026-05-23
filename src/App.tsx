@@ -30,6 +30,7 @@ import { useErrorToast } from "./hooks/useErrorToast"
 import { useChatSettingsManager } from "./hooks/useChatSettingsManager"
 import { usePersonaAutoRewrite } from "./hooks/usePersonaAutoRewrite"
 import { useStageBackgroundMedia, type StageBackgroundMedia } from "./hooks/useStageBackgroundMedia"
+import { useAudioOutputDevices } from "./hooks/useAudioOutputDevices"
 import { useVoicevoxHealthProbe } from "./hooks/useVoicevoxHealthProbe"
 import { type AvatarState } from "./components/MaidCatAvatar"
 import { type MotionPngAvatarHandle } from "./components/MotionPngAvatar"
@@ -123,6 +124,7 @@ import {
   defaultStageDisplayPreferences,
   loadAvatarMode,
   loadMotionPngSettings,
+  loadStageBackground,
   loadStageDisplayPreferences,
   loadSvgAvatarSettings,
   loadSvgCharacter,
@@ -149,9 +151,12 @@ function collectLocalStorageUiSettings(): AppUiSettings | null {
   const hasLegacyValue = Object.values(stagePreferenceStorageKeys).some((key) => storage.getItem(key) !== null)
   if (!hasLegacyValue) return null
 
+  const savedBg = loadStageBackground()
   return {
+    audioOutputDeviceId: null,
     avatarMode: loadAvatarMode() ?? "svg",
     motionPngSettings: loadMotionPngSettings(),
+    stageBackground: savedBg?.kind === "preset" ? { kind: "preset", id: savedBg.id } : null,
     stageDisplay: loadStageDisplayPreferences(),
     svgAvatarSettings: loadSvgAvatarSettings(),
     svgCharacter: loadSvgCharacter(),
@@ -215,9 +220,12 @@ export function App() {
   const [motionPngSettings, setMotionPngSettings] = useState<MotionPngSettings>(() => loadMotionPngSettings())
   const [svgAvatarSettings, setSvgAvatarSettings] = useState<SvgAvatarSettings>(() => loadSvgAvatarSettings())
   const [svgCharacter, setSvgCharacter] = useState<SvgCharacterId>(() => loadSvgCharacter())
+  const [stageBackground, setStageBackground] = useState<{ kind: "preset"; id: string } | null>(null)
   const [stageDisplayPrefs, setStageDisplayPrefs] = useState<StageDisplayPreferences>(() =>
     loadStageDisplayPreferences(),
   )
+  const [audioOutputDeviceId, setAudioOutputDeviceId] = useState<string | null>(null)
+  const audioOutput = useAudioOutputDevices()
   const [savedUiSettings, setSavedUiSettings] = useState<AppUiSettings | null>(null)
   const [settingsSaveBusy, setSettingsSaveBusy] = useState(false)
   const [settingsSaveNotice, setSettingsSaveNotice] = useState<string | null>(null)
@@ -241,7 +249,10 @@ export function App() {
     handleStageBackgroundSelect,
     stageBackgroundInputRef,
     stageBackgroundMedia,
-  } = useStageBackgroundMedia()
+  } = useStageBackgroundMedia({
+    presetId: stageBackground?.id ?? null,
+    onPresetChange: setStageBackground,
+  })
   const {
     characterPresetBusy,
     characterPresetNotice,
@@ -400,8 +411,10 @@ export function App() {
 
   function collectCurrentUiSettings(): AppUiSettings {
     return {
+      audioOutputDeviceId,
       avatarMode,
       motionPngSettings,
+      stageBackground,
       stageDisplay: stageDisplayPrefs,
       svgAvatarSettings,
       svgCharacter,
@@ -409,8 +422,10 @@ export function App() {
   }
 
   function applyUiSettings(settings: AppUiSettings) {
+    setAudioOutputDeviceId(settings.audioOutputDeviceId)
     setAvatarMode(settings.avatarMode)
     setMotionPngSettings(settings.motionPngSettings)
+    setStageBackground(settings.stageBackground)
     setStageDisplayPrefs(settings.stageDisplay)
     setSvgAvatarSettings(settings.svgAvatarSettings)
     setSvgCharacter(settings.svgCharacter)
@@ -792,6 +807,7 @@ export function App() {
 
             await playAudioBlob(next.blob, {
               onAnalysis: handleMotionPngAnalysis,
+              outputDeviceId: audioOutputDeviceId ?? undefined,
               text: next.text,
               signal: abortController.signal,
               onStart: () => {
@@ -923,9 +939,13 @@ export function App() {
           }, AUTO_REPLY_BRIDGE_DELAY_MS)
         : null
 
+    const inputKind: "viewer-comment" | "self-driven" =
+      options.automation?.source === "platform_auto_reply" ? "viewer-comment" : "self-driven"
+
     try {
       for await (const event of streamAiResponse({
         automation: options.automation,
+        inputKind,
         prompt: trimmedPrompt,
         recentTurns: options.recentTurns,
         signal: abortController.signal,
@@ -1666,23 +1686,99 @@ export function App() {
       }
 
       void (async () => {
+        let fullResponseText = ""
+        let pendingSpeechText = ""
+        let action: AutomationAction | null = null
+        let automationEnvelope: AutomationEnvelope | null = null
+        let finalEmotion: Emotion | null = null
+        let emotionPayload: FinalEmotionPayload | null = null
+        let latestRunRecap: ChatRunRecap | null = null
+        let moderation: ModerationAssessment | null = null
+        let providerMetadata: ChatMetadataPayload | null = null
+        let sessionMetadata: ChatSessionPayload | null = null
+        let speechError: Error | null = null
+        const audioSegments: Array<{ blob: Blob; emotion: Emotion; text: string }> = []
+        let synthesisTail = Promise.resolve()
+        let pendingSynthesisCount = 0
+
+        const handlePrefetchError = (error: unknown) => {
+          if (abortController.signal.aborted) return
+          speechError = error instanceof Error ? error : new Error("VOICEVOX音声の処理に失敗しました。")
+        }
+
+        const prefetchSpeechSegment = (segment: string) => {
+          const normalizedSegment = segment.trim()
+          if (!normalizedSegment || speechError) return
+          const segmentEmotion = inferEmotionFromText(normalizedSegment)
+          pendingSynthesisCount += 1
+          synthesisTail = synthesisTail
+            .then(async () => {
+              if (abortController.signal.aborted) return
+              const wav = await synthesizeVoice(normalizedSegment, abortController.signal)
+              audioSegments.push({ blob: wav, emotion: segmentEmotion, text: normalizedSegment })
+            })
+            .catch((error: unknown) => {
+              handlePrefetchError(error)
+            })
+            .finally(() => {
+              pendingSynthesisCount -= 1
+            })
+        }
+
         try {
-          const {
-            action,
-            automationEnvelope,
-            finalEmotion,
-            emotionPayload,
-            latestRunRecap,
-            moderation,
-            providerMetadata,
-            responseText,
-            sessionMetadata,
-          } = await generatePromptResponse(
+          for await (const event of streamAiResponse({
+            automation: automationRequest,
+            inputKind: "viewer-comment",
             prompt,
-            recentTurnsRef.current,
-            abortController.signal,
-            automationRequest,
-          )
+            recentTurns: recentTurnsRef.current,
+            signal: abortController.signal,
+          })) {
+            if (event.type === "automation") {
+              automationEnvelope = event.payload
+              action = event.payload.actions[0] ?? null
+            }
+            if (event.type === "text") {
+              fullResponseText += event.text
+              pendingSpeechText += event.text
+              const { remainder, segments } = extractSpeechSegments(pendingSpeechText)
+              pendingSpeechText = remainder
+              segments.forEach(prefetchSpeechSegment)
+            }
+            if (event.type === "moderation") {
+              moderation = event.payload
+            }
+            if (event.type === "metadata") {
+              providerMetadata = event.payload
+            }
+            if (event.type === "session") {
+              sessionMetadata = event.payload
+            }
+            if (event.type === "emotion") {
+              finalEmotion = event.payload.emotion
+              emotionPayload = event.payload
+            }
+            if (event.type === "meta" && isChatRunRecap(event.meta.raw)) {
+              latestRunRecap = event.meta.raw
+            }
+            if (event.type === "error") {
+              throw new Error(event.message)
+            }
+          }
+
+          if (pendingSpeechText) {
+            const { segments } = extractSpeechSegments(pendingSpeechText, { force: true })
+            segments.forEach(prefetchSpeechSegment)
+          }
+
+          await synthesisTail
+
+          if (speechError) throw speechError
+
+          const normalizedResponse = fullResponseText.trim()
+          if (!normalizedResponse) {
+            throw new Error("AI から空の応答が返りました。")
+          }
+
           if (providerMetadata) {
             setProviderMetadata(providerMetadata)
           }
@@ -1699,14 +1795,15 @@ export function App() {
           if (moderation) {
             setLatestModeration(moderation)
           }
-          appendRecentTurns(prompt, responseText)
+          appendRecentTurns(prompt, normalizedResponse)
           const preparedReply: PreparedAutoReply = {
             action,
+            audioSegments: audioSegments.length > 0 ? audioSegments : undefined,
             finalEmotion,
             id: retryKey,
             isMonetized: selectedEvents.some((event) => event.isMonetized),
             moderation,
-            responseText,
+            responseText: normalizedResponse,
             sequence: preparedSequence,
             source: "viewer",
           }
@@ -1810,6 +1907,97 @@ export function App() {
       return
     }
 
+    // 音声合成済みセグメントがあれば即座に再生（ストリーミング先回り）
+    if (reply.audioSegments && reply.audioSegments.length > 0) {
+      let hasPlayedSegment = false
+      let firstAudioObserved = false
+
+      try {
+        for (const next of reply.audioSegments) {
+          if (abortController.signal.aborted) {
+            break
+          }
+
+          if (hasPlayedSegment) {
+            await waitForQueuedPlaybackGap(abortController.signal)
+          }
+
+          await playAudioBlob(next.blob, {
+            onAnalysis: handleMotionPngAnalysis,
+            outputDeviceId: audioOutputDeviceId ?? undefined,
+            text: next.text,
+            signal: abortController.signal,
+            onStart: () => {
+              if (!abortController.signal.aborted) {
+                if (!firstAudioObserved) {
+                  firstAudioObserved = true
+                  const latencyMs = Math.round(performance.now() - replyStartedAt)
+                  setRuntimeProgress((current) =>
+                    appendRuntimeActivity(current, {
+                      detail: `${latencyMs}ms で再生を開始しました。`,
+                      kind: "latency",
+                      label: "返答初動を計測しました",
+                      status: "done",
+                    }),
+                  )
+                }
+                setCaptionText(next.text)
+                setEmotion(next.emotion)
+                setStatus("playing")
+                setAvatarState("speaking")
+              }
+            },
+            onViseme: setViseme,
+            onEnded: () => {
+              if (!abortController.signal.aborted) {
+                resetAvatarMouth()
+              }
+            },
+            onError: (error: unknown) => {
+              if (!abortController.signal.aborted) {
+                const speechErrorMessage = error instanceof Error ? error.message : "VOICEVOX音声の処理に失敗しました。"
+                showError(speechErrorMessage)
+                setEmotion("neutral")
+                setStatus("error")
+                setAvatarState("error")
+                resetAvatarMouth()
+                setRuntimeProgress((current) =>
+                  appendRuntimeActivity(current, {
+                    detail: speechErrorMessage,
+                    kind: "voice",
+                    label: "自動返答の読み上げに失敗しました",
+                    status: "error",
+                  }),
+                )
+                abortController.abort()
+              }
+            },
+          })
+          hasPlayedSegment = true
+        }
+      } catch {
+        // ignored: abort or playback error handled by onError
+      }
+
+      if (!abortController.signal.aborted) {
+        setCaptionText(normalizedResponse)
+        setStatus("ready")
+        setEmotion(reply.finalEmotion ?? "neutral")
+        setAvatarState("idle")
+        resetAvatarMouth()
+        setRuntimeProgress((current) => finalizeRuntimeProgress(current))
+      }
+
+      if (abortRef.current === abortController) {
+        abortRef.current = null
+      }
+
+      if (autoReplyEnabledRef.current) {
+        void pumpPreparedAutoReplyQueue()
+      }
+      return
+    }
+
     let synthesisTail = Promise.resolve()
     let playbackPromise: Promise<void> | null = null
     let playbackActive = false
@@ -1887,6 +2075,7 @@ export function App() {
 
             await playAudioBlob(next.blob, {
               onAnalysis: handleMotionPngAnalysis,
+              outputDeviceId: audioOutputDeviceId ?? undefined,
               text: next.text,
               signal: abortController.signal,
               onStart: () => {
@@ -2206,6 +2395,10 @@ export function App() {
         onSettingsDiscard={handleSettingsDiscard}
         settingsSaveBusy={settingsSaveBusy}
         settingsSaveNotice={settingsSaveNotice}
+        audioOutputDeviceId={audioOutputDeviceId}
+        audioOutputDevices={audioOutput.devices}
+        audioOutputSupported={audioOutput.supported}
+        onAudioOutputDeviceChange={setAudioOutputDeviceId}
         uiSettingsDirty={
           savedUiSettings
             ? JSON.stringify(collectCurrentUiSettings()) !== JSON.stringify(savedUiSettings)

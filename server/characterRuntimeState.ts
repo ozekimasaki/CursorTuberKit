@@ -10,8 +10,8 @@ import {
 } from "../shared/characterState.js"
 
 const CHARACTER_RUNTIME_STATE_FILE = path.resolve(process.cwd(), "memory", "runtime", "character-runtime-state.json")
-const RUNTIME_DRIFT_BLEND_FACTOR = 0.35
-const RUNTIME_DRIFT_MAX_STEP = 12
+const RUNTIME_DRIFT_BLEND_FACTOR = 0.15
+const RUNTIME_DRIFT_MAX_STEP = 4
 
 type CharacterRuntimeStateSource = "hook-stop" | "settings-save"
 

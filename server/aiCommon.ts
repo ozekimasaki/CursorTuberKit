@@ -31,6 +31,7 @@ export type MemKraftPromptContext = {
 export type StreamAiResponseOptions = {
   compactPrompt?: string
   compiledPrompt: string
+  inputKind?: AvatarPromptInputKind
   onSupportingEvent?: (event: Extract<ChatStreamEvent, { type: "action" | "character-artifacts" | "session" }>) => void
   onEmotion?: (payload: FinalEmotionPayload) => void
   onText: (text: string) => void

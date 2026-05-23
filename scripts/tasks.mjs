@@ -121,6 +121,15 @@ const tasks = {
   async "voicevox:stop"() {
     await runJsScript(["scripts/voicevox.mjs", "stop"])
   },
+  async "dev:tauri"() {
+    await ensureSupportedInstall()
+    await assertPortsAvailable([
+      { label: "Tauri dev server", port: clientPort },
+      { label: "Backend server", port: backendPort },
+    ])
+    await runTsc(["-p", "tsconfig.node.json"])
+    await runManagedTauriDev()
+  },
   async "_server-dev"() {
     await assertPortAvailable(backendPort, "Backend server")
     await runServerDev([], { preferBun: process.argv.includes("--prefer-bun") })
@@ -172,6 +181,23 @@ async function runManagedDev(options = {}) {
 
   const clientChild = spawnChild(process.execPath, [path.resolve(projectRoot, "scripts", "tasks.mjs"), "_vite-dev", ...childArgs], "client")
   await waitForChildGroup([serverChild, clientChild])
+}
+
+async function runManagedTauriDev(options = {}) {
+  const preferBun = Boolean(options.preferBun)
+  const childArgs = preferBun ? ["--prefer-bun"] : []
+  const serverChild = spawnChild(process.execPath, [path.resolve(projectRoot, "scripts", "tasks.mjs"), "_server-dev", ...childArgs], "server")
+
+  try {
+    await waitForHttpReady(`http://127.0.0.1:${backendPort}/api/health`, serverChild, "Backend server")
+  } catch (error) {
+    stopChild(serverChild)
+    throw error
+  }
+
+  const tauriCliPath = resolvePackageBin("@tauri-apps/cli", "tauri.js")
+  const tauriChild = spawnChild(process.execPath, [tauriCliPath, "dev"], "tauri")
+  await waitForChildGroup([serverChild, tauriChild])
 }
 
 async function runTsc(args, options = {}) {

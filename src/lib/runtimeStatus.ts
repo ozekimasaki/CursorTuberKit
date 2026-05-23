@@ -1,3 +1,4 @@
+import { API_BASE } from "./apiBase"
 import type { CharacterSinValues } from "../../shared/characterState"
 import type { ChatProvider } from "../../shared/chatStream"
 import { createEmptyCharacterRuleStatus, type CharacterRuleStatus } from "../../shared/characterRules"
@@ -42,7 +43,7 @@ export function normalizeCharacterRuleStatus(value: RuntimeStatusSnapshot["chara
 }
 
 export async function fetchRuntimeStatus(signal?: AbortSignal) {
-  const response = await fetch("/api/runtime/status", signal ? { signal } : undefined)
+  const response = await fetch(`${API_BASE}/api/runtime/status`, signal ? { signal } : undefined)
 
   if (!response.ok) {
     throw new Error(`runtime status fetch failed: ${response.status}`)

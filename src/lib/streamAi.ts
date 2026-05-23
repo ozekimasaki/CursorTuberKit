@@ -1,3 +1,4 @@
+import { API_BASE } from "./apiBase"
 import type { AutomationEnvelope, ChatAutomationRequest } from "../../shared/automation"
 import { isCharacterArtifactsPayload, type CharacterArtifactsPayload } from "../../shared/characterAgents"
 import { characterHookPhases, characterLustInterpretation, type CharacterStateMetadata } from "../../shared/characterState"
@@ -68,7 +69,7 @@ export async function* streamAiResponse({
   recentTurns,
   signal,
 }: StreamAiRequest): AsyncGenerator<AiStreamEvent> {
-  const response = await fetch("/api/chat/stream", {
+  const response = await fetch(`${API_BASE}/api/chat/stream`, {
     body: JSON.stringify({ automation, inputKind, prompt, recentTurns }),
     headers: {
       "Content-Type": "application/json",
