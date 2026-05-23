@@ -11,6 +11,7 @@ import { characterProfile } from "../shared/characterProfile.js"
 import { emotionValues, inferEmotionFromText, type Emotion } from "../shared/emotion.js"
 import { collectCursorRun } from "./cursorSdkRun.js"
 import { createCursorLocalOptions } from "./cursorLocalOptions.js"
+import { extractJsonObjectSafe } from "./cursorAgentUtils.js"
 import type { CursorRunTelemetryRecord } from "./cursorTypes.js"
 
 const CHARACTER_DIRECTOR_NAME = "character-director"
@@ -237,7 +238,7 @@ function normalizeCharacterArtifactsPayload(
     model: string
   },
 ): CharacterArtifactsPayload {
-  const parsed = JSON.parse(extractJsonObject(rawResponse)) as Record<string, unknown>
+  const parsed = JSON.parse(extractJsonObjectSafe(rawResponse, "Character agent response")) as Record<string, unknown>
   const dominantEmotion = inferEmotionFromText(options.assistantText)
   const segments = normalizeSegments(parsed.writer, options.assistantText, dominantEmotion)
   const warnings = normalizeStringArray(parsed.warnings, 4)
@@ -469,50 +470,6 @@ function splitSegments(text: string) {
 
   const fallback = text.trim()
   return fallback ? [truncateText(fallback, 220)] : ["…"]
-}
-
-function extractJsonObject(rawResponse: string) {
-  const normalized = rawResponse.trim()
-
-  if (!normalized) {
-    throw new Error("Character agent response was empty.")
-  }
-
-  if (normalized.startsWith("{") && normalized.endsWith("}")) {
-    try {
-      JSON.parse(normalized)
-      return normalized
-    } catch {
-      // Fall through to brace matching
-    }
-  }
-
-  // Find first opening brace and match to closing brace by depth
-  const first = normalized.indexOf("{")
-  if (first < 0) {
-    throw new Error(`Character agent response did not contain JSON: ${truncateText(normalized, 200)}`)
-  }
-
-  let depth = 0
-  let last = -1
-  for (let i = first; i < normalized.length; i++) {
-    const char = normalized[i]
-    if (char === "{") {
-      depth++
-    } else if (char === "}") {
-      depth--
-      if (depth === 0) {
-        last = i
-        break
-      }
-    }
-  }
-
-  if (last < 0) {
-    throw new Error(`Character agent response did not contain a complete JSON object: ${truncateText(normalized, 200)}`)
-  }
-
-  return normalized.slice(first, last + 1)
 }
 
 function normalizeEmotion(value: unknown, fallback: Emotion): Emotion {

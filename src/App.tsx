@@ -284,6 +284,7 @@ export function App() {
   const preparedAutoReplyQueueRef = useRef<PreparedAutoReply[]>([])
   const preparedAutoReplySequenceRef = useRef(0)
   const preparedAutoReplyPlaybackBusyRef = useRef(false)
+  const livePersonaMutationBusyRef = useRef(false)
   const autoReplyGenerationAbortControllersRef = useRef<Set<AbortController>>(new Set())
   const {
     assistantTurnCountRef,
@@ -459,11 +460,17 @@ export function App() {
   }
 
   async function triggerLivePersonaMutation(cueText?: string, _receivedAt?: string) {
+    if (livePersonaMutationBusyRef.current) {
+      console.log("[LiveMutation] SKIPPED - mutation already running")
+      return
+    }
+
     if (!dopamine.isHeavyMutationReady()) {
       console.log("[LiveMutation] SKIPPED - cooldown not ready")
       return
     }
     console.log(`[LiveMutation] TRIGGERED by: "${cueText?.substring(0, 40)}"`)
+    livePersonaMutationBusyRef.current = true
     dopamine.setLiveMutationBusy(true)
     try {
       const emotion = cueText ? inferQuickEmotion(cueText) : undefined
@@ -503,6 +510,7 @@ export function App() {
     } catch (error) {
       console.warn("[LiveMutation] FAILED:", error)
     } finally {
+      livePersonaMutationBusyRef.current = false
       dopamine.setLiveMutationBusy(false)
     }
   }

@@ -19,6 +19,7 @@ import {
 import { appendCursorTelemetry } from "./cursorTelemetry.js"
 import type { CursorRunTelemetryRecord, CursorToolCallTelemetry } from "./cursorTypes.js"
 import { createCursorLocalOptions } from "./cursorLocalOptions.js"
+import { extractJsonObjectSafe } from "./cursorAgentUtils.js"
 
 type CursorWorkerInput = {
   compactPrompt?: string
@@ -787,7 +788,7 @@ function normalizeHookEmotionAnalysis(
   summary: string
   targetSins: Record<CharacterSinName, number>
 } {
-  const parsed = readRecord(JSON.parse(extractJsonObject(rawResponse)))
+  const parsed = readRecord(JSON.parse(extractJsonObjectSafe(rawResponse, "Cursor emotion drift analysis output")))
   const rawTargets = readRecord(parsed?.targetSins)
   const targetSins = normalizeCharacterSinValues({
     envy: readNumericOrFallback(rawTargets?.envy, currentSins.envy),
@@ -803,81 +804,6 @@ function normalizeHookEmotionAnalysis(
     summary: typeof parsed?.summary === "string" && parsed.summary.trim() ? parsed.summary.trim() : "感情の上下を再評価しました。",
     targetSins,
   }
-}
-
-function extractJsonObject(rawResponse: string) {
-  // 1. Try to extract from fenced code block first (most reliable)
-  const fencedMatch = rawResponse.match(/```(?:json)?\s*([\s\S]*?)```/i)
-  if (fencedMatch?.[1]) {
-    const candidate = fencedMatch[1].trim()
-    try {
-      JSON.parse(candidate)
-      return candidate
-    } catch {
-      // Fall through to brace matching
-    }
-  }
-
-  // 2. If entire text looks like a single JSON object, try it
-  const trimmed = rawResponse.trim()
-  if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
-    try {
-      JSON.parse(trimmed)
-      return trimmed
-    } catch {
-      // Fall through
-    }
-  }
-
-  // 3. Smart brace matching that ignores braces inside string literals
-  const firstBraceIndex = rawResponse.indexOf("{")
-  if (firstBraceIndex < 0) {
-    throw new Error("Expected a JSON object in Cursor emotion drift analysis output.")
-  }
-
-  let depth = 0
-  let inString = false
-  let escapeNext = false
-  let lastBraceIndex = -1
-
-  for (let i = firstBraceIndex; i < rawResponse.length; i++) {
-    const char = rawResponse[i]
-
-    if (escapeNext) {
-      escapeNext = false
-      continue
-    }
-
-    if (char === "\\") {
-      escapeNext = true
-      continue
-    }
-
-    if (char === '"') {
-      inString = !inString
-      continue
-    }
-
-    if (inString) {
-      continue
-    }
-
-    if (char === "{") {
-      depth++
-    } else if (char === "}") {
-      depth--
-      if (depth === 0) {
-        lastBraceIndex = i
-        break
-      }
-    }
-  }
-
-  if (lastBraceIndex < 0) {
-    throw new Error("Expected a complete JSON object in Cursor emotion drift analysis output.")
-  }
-
-  return rawResponse.slice(firstBraceIndex, lastBraceIndex + 1)
 }
 
 function readNumericOrFallback(value: unknown, fallback: number) {

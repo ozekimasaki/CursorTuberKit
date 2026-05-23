@@ -1,5 +1,10 @@
 import { Agent } from "@cursor/sdk"
 import type { DirectorDecision, MutationCue } from "../shared/dopamineMutation.js"
+import { collectCursorRun } from "./cursorSdkRun.js"
+import { createCursorLocalOptions } from "./cursorLocalOptions.js"
+import { disposeAgentSafely, extractJsonObjectSafe, withTimeout } from "./cursorAgentUtils.js"
+
+const DOPAMINE_DIRECTOR_TIMEOUT_MS = 12000
 
 export async function decideMutation(
   commentText: string,
@@ -41,21 +46,30 @@ ${context || "(なし)"}
 - 常に配信者が「気づくレベル以上」の激しさを目指す
 - visualMultiplierは基準値に掛ける倍率（1.5=50%増し）`
 
-  // Use Agent.prompt() for one-shot execution (no shared state conflicts)
+  let agent: Awaited<ReturnType<typeof Agent.create>> | null = null
+
   try {
-    const result = await Agent.prompt(prompt, {
+    agent = await Agent.create({
       apiKey,
       model: { id: "composer-2.5", params: [{ id: "thinking", value: "low" }] },
-      local: { cwd: process.cwd() },
+      local: createCursorLocalOptions(),
+      name: "Dopamine Director",
     })
+    const run = await agent.send(prompt)
+    const result = await withTimeout(
+      collectCursorRun(run),
+      DOPAMINE_DIRECTOR_TIMEOUT_MS,
+      "Dopamine director",
+      () => run.cancel().catch(() => undefined),
+    )
 
-    console.log(`[DopamineDirector] AI raw response (${result.status}): "${result.result?.substring(0, 200)}..."`)
+    console.log(`[DopamineDirector] AI raw response (${result.status}): "${result.text.substring(0, 200)}..."`)
 
-    const parsed = parseDirectorResponse(result.result || "")
+    const parsed = parseDirectorResponse(result.text)
     console.log(`[DopamineDirector] Decision: emotion=${parsed.emotionTag}, intensity=${parsed.intensity}, vm=${parsed.visualMultiplier}, glitch=[${parsed.glitchTypes.join(",")}]`)
     return parsed
   } catch (err) {
-    console.error(`[DopamineDirector] Agent.prompt() failed: ${err instanceof Error ? err.message : String(err)}`)
+    console.error(`[DopamineDirector] AI director failed: ${err instanceof Error ? err.message : String(err)}`)
     // Return fallback
     return {
       emotionTag: currentEmotion || "neutral",
@@ -66,6 +80,10 @@ ${context || "(なし)"}
       voiceMultiplier: 1.0,
       shouldMutant: false,
     }
+  } finally {
+    if (agent) {
+      await disposeAgentSafely(agent)
+    }
   }
 }
 
@@ -74,9 +92,10 @@ function parseDirectorResponse(text: string | undefined): DirectorDecision {
     return createFallback()
   }
 
-  // Extract JSON using proper brace matching
-  const jsonStr = extractFirstJsonObject(text)
-  if (!jsonStr) {
+  let jsonStr: string
+  try {
+    jsonStr = extractJsonObjectSafe(text, "Dopamine director output")
+  } catch {
     console.error(`[DopamineDirector] No valid JSON found in response. Raw: "${text.substring(0, 300)}"`)
     return createFallback()
   }
@@ -96,44 +115,6 @@ function parseDirectorResponse(text: string | undefined): DirectorDecision {
     console.error(`[DopamineDirector] JSON parse failed: ${err instanceof Error ? err.message : String(err)}. Extracted JSON: "${jsonStr.substring(0, 200)}"`)
     return createFallback()
   }
-}
-
-function extractFirstJsonObject(text: string): string | null {
-  // Try fenced code block first
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)
-  if (fenced?.[1]) {
-    const candidate = fenced[1].trim()
-    if (candidate.startsWith("{") && candidate.endsWith("}")) {
-      try {
-        JSON.parse(candidate)
-        return candidate
-      } catch {
-        // Fall through
-      }
-    }
-  }
-
-  // Find first opening brace and match to closing brace
-  const first = text.indexOf("{")
-  if (first < 0) return null
-
-  let depth = 0
-  let last = -1
-  for (let i = first; i < text.length; i++) {
-    const char = text[i]
-    if (char === "{") {
-      depth++
-    } else if (char === "}") {
-      depth--
-      if (depth === 0) {
-        last = i
-        break
-      }
-    }
-  }
-
-  if (last < 0) return null
-  return text.slice(first, last + 1)
 }
 
 function createFallback(): DirectorDecision {

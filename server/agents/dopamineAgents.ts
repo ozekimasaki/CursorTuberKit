@@ -1,5 +1,10 @@
 import { Agent } from "@cursor/sdk"
 import type { AgentMutationProposal } from "../../shared/dopamineMutation.js"
+import { collectCursorRun } from "../cursorSdkRun.js"
+import { createCursorLocalOptions } from "../cursorLocalOptions.js"
+import { disposeAgentSafely, extractJsonObjectSafe, withTimeout } from "../cursorAgentUtils.js"
+
+const DOPAMINE_AGENT_TIMEOUT_MS = 10000
 
 async function askAgentForProposal(
   agentName: string,
@@ -17,22 +22,38 @@ async function askAgentForProposal(
 コメント: "${commentText}" | 現在の感情: ${currentEmotion}
 あなたの役割に従い、最適な演出変異を提案してください。JSONのみ出力。`
 
+  let agent: Awaited<ReturnType<typeof Agent.create>> | null = null
+
   try {
-    const result = await Agent.prompt(prompt, {
+    agent = await Agent.create({
       apiKey,
       model: { id: "composer-2.5", params: [{ id: "thinking", value: "low" }] },
-      local: { cwd: process.cwd() },
+      local: createCursorLocalOptions(),
+      name: `Dopamine ${agentName}`,
     })
-    return parseAgentProposal(result.result || "", agentName)
+    const run = await agent.send(prompt)
+    const result = await withTimeout(
+      collectCursorRun(run),
+      DOPAMINE_AGENT_TIMEOUT_MS,
+      agentName,
+      () => run.cancel().catch(() => undefined),
+    )
+    return parseAgentProposal(result.text, agentName)
   } catch (err) {
-    console.error(`[${agentName}] Agent.prompt() failed: ${err instanceof Error ? err.message : String(err)}`)
+    console.error(`[${agentName}] proposal generation failed: ${err instanceof Error ? err.message : String(err)}`)
     return createFallbackProposal(agentName)
+  } finally {
+    if (agent) {
+      await disposeAgentSafely(agent)
+    }
   }
 }
 
 function parseAgentProposal(text: string, agentName: string): AgentMutationProposal {
-  const jsonStr = extractFirstJsonObject(text)
-  if (!jsonStr) {
+  let jsonStr: string
+  try {
+    jsonStr = extractJsonObjectSafe(text, `${agentName} output`)
+  } catch {
     return createFallbackProposal(agentName)
   }
 
@@ -50,42 +71,6 @@ function parseAgentProposal(text: string, agentName: string): AgentMutationPropo
   } catch {
     return createFallbackProposal(agentName)
   }
-}
-
-function extractFirstJsonObject(text: string): string | null {
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)
-  if (fenced?.[1]) {
-    const candidate = fenced[1].trim()
-    if (candidate.startsWith("{") && candidate.endsWith("}")) {
-      try {
-        JSON.parse(candidate)
-        return candidate
-      } catch {
-        // Fall through
-      }
-    }
-  }
-
-  const first = text.indexOf("{")
-  if (first < 0) return null
-
-  let depth = 0
-  let last = -1
-  for (let i = first; i < text.length; i++) {
-    const char = text[i]
-    if (char === "{") {
-      depth++
-    } else if (char === "}") {
-      depth--
-      if (depth === 0) {
-        last = i
-        break
-      }
-    }
-  }
-
-  if (last < 0) return null
-  return text.slice(first, last + 1)
 }
 
 function createFallbackProposal(agentName: string): AgentMutationProposal {
