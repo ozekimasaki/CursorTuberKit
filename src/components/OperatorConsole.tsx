@@ -15,6 +15,7 @@ import type { Emotion } from "../../shared/emotion"
 import type { SinExpressionSignal } from "../../shared/sinsExpression"
 import type { ConversationTurn } from "../lib/streamAi"
 import type { Viseme } from "../lib/visemes"
+import type { DopamineState, PersonaMutation } from "../../shared/dopamineMutation"
 import { ContentSurfacePanel } from "./ContentSurfacePanel"
 import { ViewerEventFeed } from "./ViewerEventFeed"
 import { type AvatarState } from "./MaidCatAvatar"
@@ -74,6 +75,11 @@ type OperatorConsoleProps = {
 
   // Compose
   onSubmit: (prompt: string) => void
+
+  // Dopamine mutation
+  dopamineState?: DopamineState
+  onTriggerManualMutation?: () => void
+  onUndoMutation?: () => void
 }
 
 export function OperatorConsole(props: OperatorConsoleProps) {
@@ -117,6 +123,9 @@ export function OperatorConsole(props: OperatorConsoleProps) {
     onPlatformStart,
     onPlatformStop,
     onSubmit,
+    dopamineState,
+    onTriggerManualMutation,
+    onUndoMutation,
   } = props
 
   const [prompt, setPrompt] = useState("")
@@ -395,6 +404,45 @@ export function OperatorConsole(props: OperatorConsoleProps) {
             </button>
           </div>
         </div>
+
+        {dopamineState && (
+          <div className="op-card">
+            <div className="op-card__title">
+              <span>Live Mutation</span>
+              <small>{dopamineState.phase}</small>
+            </div>
+            <div className="composer__actions">
+              <button
+                className="btn btn--primary btn--sm"
+                type="button"
+                onClick={onTriggerManualMutation}
+                disabled={!onTriggerManualMutation}
+              >
+                変化
+              </button>
+              <button
+                className="btn btn--secondary btn--sm"
+                type="button"
+                onClick={onUndoMutation}
+                disabled={!onUndoMutation || dopamineState.personaHistory.length === 0}
+              >
+                戻す
+              </button>
+            </div>
+            {dopamineState.personaHistory.length > 0 && (
+              <div className="op-row">
+                <span className="op-row__label">直近の変化</span>
+              </div>
+            )}
+            {dopamineState.personaHistory.slice(0, 3).map((m) => (
+              <div key={m.id} className="op-row">
+                <span className="op-row__val" style={{ fontSize: "0.75rem", opacity: 0.8 }}>
+                  {m.summary}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </aside>
 
       {/* Compose */}

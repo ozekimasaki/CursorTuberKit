@@ -29,6 +29,8 @@ import {
 import { useErrorToast } from "./hooks/useErrorToast"
 import { useChatSettingsManager } from "./hooks/useChatSettingsManager"
 import { usePersonaAutoRewrite } from "./hooks/usePersonaAutoRewrite"
+import { useDopamineEngine } from "./hooks/useDopamineEngine"
+import { DopamineEffects } from "./components/DopamineEffects"
 import { useStageBackgroundMedia, type StageBackgroundMedia } from "./hooks/useStageBackgroundMedia"
 import { useAudioOutputDevices } from "./hooks/useAudioOutputDevices"
 import { useVoicevoxHealthProbe } from "./hooks/useVoicevoxHealthProbe"
@@ -47,6 +49,7 @@ import {
 } from "./lib/avatarConfig"
 import { deriveCharacterContentSurface } from "./lib/contentSurface"
 import { inferEmotionFromText } from "./lib/emotion"
+import { inferQuickEmotion } from "../shared/dopamineMutation"
 import {
   fetchPlatformChatState,
   startPlatformChat,
@@ -68,6 +71,7 @@ import { fetchRuntimeStatus, isChatRunRecap, normalizeCharacterRuleStatus, type 
 import type { Viseme } from "./lib/visemes"
 import { synthesizeVoice } from "./lib/voicevox"
 import { requestAutopilotTopic } from "./lib/autopilot"
+import { requestLiveMutation } from "./lib/liveSelfRewrite"
 import {
   AUTO_REPLY_BRIDGE_DELAY_MS,
   AUTO_REPLY_BRIDGE_TEXT,
@@ -310,6 +314,7 @@ export function App() {
     showError,
     syncRuntimeStatus,
   })
+  const dopamine = useDopamineEngine()
 
   useEffect(() => {
     if (typeof document === "undefined") return
@@ -429,6 +434,47 @@ export function App() {
     setStageDisplayPrefs(settings.stageDisplay)
     setSvgAvatarSettings(settings.svgAvatarSettings)
     setSvgCharacter(settings.svgCharacter)
+  }
+
+  async function triggerLivePersonaMutation(cueText?: string, _receivedAt?: string) {
+    if (!dopamine.isHeavyMutationReady()) return
+    dopamine.setLiveMutationBusy(true)
+    try {
+      const emotion = cueText ? inferQuickEmotion(cueText) : undefined
+      const result = await requestLiveMutation({
+        cueText,
+        cueEmotion: emotion,
+      })
+      setChatSettings({
+        ...chatSettings,
+        characterPrompt: result.settings.characterPrompt,
+        characterFullPrompt: result.settings.characterFullPrompt,
+      })
+      dopamine.pushPersonaMutation({
+        id: crypto.randomUUID(),
+        previousPrompt: chatSettings.characterPrompt,
+        nextPrompt: result.settings.characterPrompt,
+        summary: result.summary,
+        monologue: result.monologue,
+        cue: {
+          kind: cueText ? "comment_keyword" : "manual",
+          text: cueText,
+          emotionTag: emotion,
+          intensity: 0.7,
+          receivedAt: new Date().toISOString(),
+        },
+        appliedAt: new Date().toISOString(),
+        partial: false,
+      })
+      // Auto-enqueue the monologue for speech if voice is enabled
+      if (voiceEnabled && result.monologue) {
+        void runPrompt(result.monologue, { interruptCurrent: false })
+      }
+    } catch (error) {
+      console.warn("[liveMutation] failed:", error)
+    } finally {
+      dopamine.setLiveMutationBusy(false)
+    }
   }
 
   async function handleAllSettingsSave(nextChatSettings: ChatSettings) {
@@ -648,6 +694,16 @@ export function App() {
       }
 
       setLiveViewerEvents((current) => insertViewerEvent(current, viewerEvent))
+      dopamine.triggerCueFromComment(viewerEvent)
+
+      // Random live persona mutation trigger (20% chance when cooldown ready)
+      if (
+        viewerEvent.kind === "comment" &&
+        dopamine.isHeavyMutationReady() &&
+        Math.random() < 0.2
+      ) {
+        void triggerLivePersonaMutation(viewerEvent.text, viewerEvent.receivedAt)
+      }
 
       if (autoReplyEnabledRef.current) {
         enqueueAutoReplyEvent(viewerEvent)
@@ -879,7 +935,7 @@ export function App() {
             return
           }
 
-          const wav = await synthesizeVoice(normalizedSegment, abortController.signal)
+          const wav = await synthesizeVoice(normalizedSegment, abortController.signal, dopamine.state.voice)
           audioQueue.push({ blob: wav, emotion, text: normalizedSegment })
           startPlaybackIfNeeded()
         })
@@ -1270,7 +1326,7 @@ export function App() {
       return cached
     }
 
-    const wav = await synthesizeVoice(text, signal)
+    const wav = await synthesizeVoice(text, signal, dopamine.state.voice)
     bridgeSpeechCacheRef.current.set(text, wav)
     return wav
   }
@@ -1714,7 +1770,7 @@ export function App() {
           synthesisTail = synthesisTail
             .then(async () => {
               if (abortController.signal.aborted) return
-              const wav = await synthesizeVoice(normalizedSegment, abortController.signal)
+              const wav = await synthesizeVoice(normalizedSegment, abortController.signal, dopamine.state.voice)
               audioSegments.push({ blob: wav, emotion: segmentEmotion, text: normalizedSegment })
             })
             .catch((error: unknown) => {
@@ -2147,7 +2203,7 @@ export function App() {
             return
           }
 
-          const wav = await synthesizeVoice(normalizedSegment, abortController.signal)
+          const wav = await synthesizeVoice(normalizedSegment, abortController.signal, dopamine.state.voice)
           audioQueue.push({ blob: wav, emotion: segmentEmotion, text: normalizedSegment })
           startPlaybackIfNeeded()
         })
@@ -2259,26 +2315,29 @@ export function App() {
   )
 
   const renderStageView = (variant: "obs" | "preview") => (
-    <StageView
-      avatarMode={avatarMode}
-      avatarState={avatarState}
-      caption={responseText}
-      showCaption={stageDisplayPrefs.showCaption}
-      captionStyle={stageDisplayPrefs.captionStyle}
-      showComments={stageDisplayPrefs.showComments}
-      liveViewerEvents={liveViewerEvents}
-      emotion={emotion}
-      motionPngAvatarRef={variant === "obs" ? motionPngAvatarRef : undefined}
-      motionPngFiles={motionPngFiles}
-      motionPngSettings={motionPngSettings}
-      svgAvatarSettings={svgAvatarSettings}
-      svgCharacter={svgCharacter}
-      sinSignal={sinSignal}
-      onMotionPngAssetStatusChange={variant === "obs" ? setMotionPngAssetStatus : undefined}
-      stageBackgroundMedia={stageBackgroundMedia}
-      viseme={viseme}
-      embedded={variant === "preview"}
-    />
+    <DopamineEffects state={dopamine.state}>
+      <StageView
+        avatarMode={avatarMode}
+        avatarState={avatarState}
+        caption={responseText}
+        showCaption={stageDisplayPrefs.showCaption}
+        captionStyle={stageDisplayPrefs.captionStyle}
+        showComments={stageDisplayPrefs.showComments}
+        liveViewerEvents={liveViewerEvents}
+        emotion={emotion}
+        motionPngAvatarRef={variant === "obs" ? motionPngAvatarRef : undefined}
+        motionPngFiles={motionPngFiles}
+        motionPngSettings={motionPngSettings}
+        svgAvatarSettings={svgAvatarSettings}
+        svgCharacter={svgCharacter}
+        sinSignal={sinSignal}
+        onMotionPngAssetStatusChange={variant === "obs" ? setMotionPngAssetStatus : undefined}
+        stageBackgroundMedia={stageBackgroundMedia}
+        viseme={viseme}
+        embedded={variant === "preview"}
+        dopamineState={dopamine.state}
+      />
+    </DopamineEffects>
   )
 
   if (viewMode === "stage") {
@@ -2343,6 +2402,9 @@ export function App() {
         onPlatformStart={handlePlatformStart}
         onPlatformStop={handlePlatformStop}
         onSubmit={handlePrompt}
+        dopamineState={dopamine.state}
+        onTriggerManualMutation={() => void triggerLivePersonaMutation()}
+        onUndoMutation={dopamine.undoLastMutation}
       />
 
       <Suspense fallback={null}>

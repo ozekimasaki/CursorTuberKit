@@ -40,9 +40,16 @@ export async function fetchVoicevoxSpeakers(signal?: AbortSignal): Promise<Voice
   return Array.isArray(body.groups) ? body.groups : []
 }
 
-export async function synthesizeVoice(text: string, signal: AbortSignal): Promise<Blob> {
+export type VoiceMutationRequest = {
+  speedDelta?: number
+  pitchDelta?: number
+  intonationDelta?: number
+  speakerId?: number | null
+}
+
+export async function synthesizeVoice(text: string, signal: AbortSignal, mutation?: VoiceMutationRequest): Promise<Blob> {
   const response = await fetch(`${API_BASE}/api/voicevox/synthesis`, {
-    body: JSON.stringify({ text }),
+    body: JSON.stringify({ text, mutation }),
     headers: {
       "Content-Type": "application/json",
     },

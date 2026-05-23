@@ -3,10 +3,18 @@ import { readAppConfig } from "./appConfig.js"
 
 type AudioQuery = Record<string, unknown>
 
+export type VoiceMutationOverrides = {
+  speedDelta?: number
+  pitchDelta?: number
+  intonationDelta?: number
+  speakerId?: number | null
+}
+
 type SynthesizeVoiceOptions = {
   signal: AbortSignal
   text: string
   voice?: ChatVoiceSettings
+  mutation?: VoiceMutationOverrides
 }
 
 export class VoicevoxError extends Error {
@@ -53,7 +61,7 @@ export async function getVoicevoxHealth(signal?: AbortSignal, voice?: ChatVoiceS
   }
 }
 
-export async function synthesizeVoice({ signal, text, voice }: SynthesizeVoiceOptions): Promise<Buffer> {
+export async function synthesizeVoice({ signal, text, voice, mutation }: SynthesizeVoiceOptions): Promise<Buffer> {
   const normalizedText = text.trim()
 
   if (!normalizedText) {
@@ -64,9 +72,9 @@ export async function synthesizeVoice({ signal, text, voice }: SynthesizeVoiceOp
     throw new VoicevoxError("VOICEVOXで音声化できるテキストは1000文字以下です。")
   }
 
-  const speaker = voice?.speakerId ?? getVoicevoxSpeaker()
+  const speaker = mutation?.speakerId ?? voice?.speakerId ?? getVoicevoxSpeaker()
   const query = await createAudioQuery(normalizedText, speaker, signal)
-  const tunedQuery = tuneAudioQuery(query, voice)
+  const tunedQuery = tuneAudioQuery(query, voice, mutation)
   const wav = await synthesis(tunedQuery, speaker, signal)
   return Buffer.from(await wav.arrayBuffer())
 }
@@ -181,14 +189,23 @@ async function synthesis(query: AudioQuery, speaker: number, signal: AbortSignal
   return response
 }
 
-function tuneAudioQuery(query: AudioQuery, voice?: ChatVoiceSettings): AudioQuery {
+function tuneAudioQuery(query: AudioQuery, voice?: ChatVoiceSettings, mutation?: VoiceMutationOverrides): AudioQuery {
+  const baseIntonation = voice?.intonationScale ?? 1.15
+  const basePitch = voice?.pitchScale ?? 0.02
+  const baseSpeed = voice?.speedScale ?? 1.08
+  const baseVolume = voice?.volumeScale ?? 1
+
   return {
     ...query,
-    intonationScale: readNumber(query.intonationScale, voice?.intonationScale ?? 1.15),
-    pitchScale: readNumber(query.pitchScale, voice?.pitchScale ?? 0.02),
-    speedScale: readNumber(query.speedScale, voice?.speedScale ?? 1.08),
-    volumeScale: readNumber(query.volumeScale, voice?.volumeScale ?? 1),
+    intonationScale: clampAudioParam(readNumber(query.intonationScale, baseIntonation) + (mutation?.intonationDelta ?? 0), 0, 2),
+    pitchScale: clampAudioParam(readNumber(query.pitchScale, basePitch) + (mutation?.pitchDelta ?? 0), -0.15, 0.15),
+    speedScale: clampAudioParam(readNumber(query.speedScale, baseSpeed) + (mutation?.speedDelta ?? 0), 0.5, 2),
+    volumeScale: readNumber(query.volumeScale, baseVolume),
   }
+}
+
+function clampAudioParam(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value))
 }
 
 function readNumber(value: unknown, fallback: number) {

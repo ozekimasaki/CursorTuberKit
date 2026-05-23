@@ -1,0 +1,87 @@
+@keyframes dopamine-glitch-r {
+  0% { clip-path: inset(10% 0 80% 0); transform: translate(-3px, 0); }
+  20% { clip-path: inset(40% 0 30% 0); transform: translate(3px, 0); }
+  40% { clip-path: inset(80% 0 5% 0); transform: translate(-2px, 0); }
+  60% { clip-path: inset(30% 0 50% 0); transform: translate(2px, 0); }
+  80% { clip-path: inset(60% 0 20% 0); transform: translate(-1px, 0); }
+  100% { clip-path: inset(10% 0 80% 0); transform: translate(3px, 0); }
+}
+
+@keyframes dopamine-glitch-g {
+  0% { clip-path: inset(60% 0 10% 0); transform: translate(2px, 0); }
+  20% { clip-path: inset(20% 0 60% 0); transform: translate(-2px, 0); }
+  40% { clip-path: inset(5% 0 80% 0); transform: translate(3px, 0); }
+  60% { clip-path: inset(50% 0 30% 0); transform: translate(-3px, 0); }
+  80% { clip-path: inset(30% 0 40% 0); transform: translate(1px, 0); }
+  100% { clip-path: inset(60% 0 10% 0); transform: translate(-2px, 0); }
+}
+
+@keyframes dopamine-glitch-b {
+  0% { clip-path: inset(30% 0 50% 0); transform: translate(0, 2px); }
+  20% { clip-path: inset(80% 0 5% 0); transform: translate(0, -2px); }
+  40% { clip-path: inset(10% 0 70% 0); transform: translate(0, 3px); }
+  60% { clip-path: inset(70% 0 15% 0); transform: translate(0, -3px); }
+  80% { clip-path: inset(40% 0 40% 0); transform: translate(0, 1px); }
+  100% { clip-path: inset(30% 0 50% 0); transform: translate(0, -1px); }
+}
+
+@keyframes dopamine-shake {
+  0% { transform: translate(0, 0); }
+  10% { transform: translate(calc(var(--dopamine-shake-intensity, 0.5) * -8px), calc(var(--dopamine-shake-intensity, 0.5) * -4px)); }
+  20% { transform: translate(calc(var(--dopamine-shake-intensity, 0.5) * 6px), calc(var(--dopamine-shake-intensity, 0.5) * 3px)); }
+  30% { transform: translate(calc(var(--dopamine-shake-intensity, 0.5) * -4px), calc(var(--dopamine-shake-intensity, 0.5) * 5px)); }
+  40% { transform: translate(calc(var(--dopamine-shake-intensity, 0.5) * 3px), calc(var(--dopamine-shake-intensity, 0.5) * -6px)); }
+  50% { transform: translate(calc(var(--dopamine-shake-intensity, 0.5) * -6px), calc(var(--dopamine-shake-intensity, 0.5) * 2px)); }
+  60% { transform: translate(calc(var(--dopamine-shake-intensity, 0.5) * 5px), calc(var(--dopamine-shake-intensity, 0.5) * -3px)); }
+  70% { transform: translate(calc(var(--dopamine-shake-intensity, 0.5) * -3px), calc(var(--dopamine-shake-intensity, 0.5) * 4px)); }
+  80% { transform: translate(calc(var(--dopamine-shake-intensity, 0.5) * 4px), calc(var(--dopamine-shake-intensity, 0.5) * -2px)); }
+  90% { transform: translate(calc(var(--dopamine-shake-intensity, 0.5) * -2px), calc(var(--dopamine-shake-intensity, 0.5) * 3px)); }
+  100% { transform: translate(0, 0); }
+}
+
+.dopamine-effects {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.dopamine-effects__glitch-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 100;
+  opacity: 0;
+  mix-blend-mode: screen;
+}
+
+.dopamine-glitching .dopamine-effects__glitch-layer {
+  opacity: calc(var(--dopamine-glitch-intensity, 0) * 0.6);
+}
+
+.dopamine-effects__glitch-layer--r {
+  background: rgba(255, 0, 0, 0.15);
+  animation: dopamine-glitch-r 0.3s infinite linear alternate;
+}
+
+.dopamine-effects__glitch-layer--g {
+  background: rgba(0, 255, 0, 0.15);
+  animation: dopamine-glitch-g 0.35s infinite linear alternate;
+}
+
+.dopamine-effects__glitch-layer--b {
+  background: rgba(0, 0, 255, 0.15);
+  animation: dopamine-glitch-b 0.25s infinite linear alternate;
+}
+
+.dopamine-shaking {
+  animation: dopamine-shake 0.4s infinite;
+}
+
+/* Stage caption overrides */
+.stage-view__caption {
+  color: var(--dopamine-caption-color, var(--stage-caption-color, #fff)) !important;
+  font-weight: var(--dopamine-caption-weight, var(--stage-caption-font-weight, 400)) !important;
+  font-size: calc(1em * var(--dopamine-caption-size-mul, 1)) !important;
+  transition: color 0.3s ease, font-weight 0.3s ease, font-size 0.3s ease;
+}

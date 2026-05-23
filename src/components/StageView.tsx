@@ -8,6 +8,7 @@ import type { SinExpressionSignal } from "../../shared/sinsExpression"
 import type { AvatarMode, MotionPngAssetStatus, MotionPngSettings, SvgAvatarSettings, SvgCharacterId } from "../lib/avatarConfig"
 import type { Viseme } from "../lib/visemes"
 import type { PlatformViewerEvent } from "../../shared/platformChat"
+import type { DopamineState } from "../../shared/dopamineMutation"
 import { defaultStageCaptionStyle, type StageCaptionStyle } from "../lib/stagePreferences"
 import { useCaptionFont } from "../lib/googleFonts"
 
@@ -36,6 +37,7 @@ type StageViewProps = {
   stageBackgroundMedia: StageBackground
   viseme: Viseme
   embedded?: boolean
+  dopamineState?: DopamineState
 }
 
 export function StageView({
@@ -57,6 +59,7 @@ export function StageView({
   stageBackgroundMedia,
   viseme,
   embedded = false,
+  dopamineState,
 }: StageViewProps) {
   useEffect(() => {
     if (embedded) return
@@ -91,15 +94,16 @@ export function StageView({
     const outline = captionStyle.outlineEnabled
       ? "0 0 4px rgba(0,0,0,0.9), 0 1px 2px rgba(0,0,0,0.95), 1px 0 0 rgba(0,0,0,0.9), -1px 0 0 rgba(0,0,0,0.9), 0 1px 0 rgba(0,0,0,0.9), 0 -1px 0 rgba(0,0,0,0.9)"
       : "none"
+    const d = dopamineState?.visual
     return {
       "--stage-caption-font-family": captionFont.stack,
-      "--stage-caption-font-weight": String(captionStyle.fontWeight),
-      "--stage-caption-font-scale": String(captionStyle.fontSizeScale),
-      "--stage-caption-color": captionStyle.color,
+      "--stage-caption-font-weight": String(d?.captionWeight ?? captionStyle.fontWeight),
+      "--stage-caption-font-scale": String((d?.captionSizeMul ?? 1) * captionStyle.fontSizeScale),
+      "--stage-caption-color": d?.captionColor ?? captionStyle.color,
       "--stage-caption-bg": `rgba(0, 0, 0, ${bg})`,
       "--stage-caption-shadow": outline,
     } as CSSProperties
-  }, [captionFont, captionStyle])
+  }, [captionFont, captionStyle, dopamineState])
 
   return (
     <main
