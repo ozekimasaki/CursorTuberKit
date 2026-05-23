@@ -17,7 +17,7 @@ import {
   type CursorChatSessionRecord,
 } from "./cursorSessionStore.js"
 import { appendCursorTelemetry } from "./cursorTelemetry.js"
-import type { CursorRunTelemetryRecord } from "./cursorTypes.js"
+import type { CursorRunTelemetryRecord, CursorToolCallTelemetry } from "./cursorTypes.js"
 import { createCursorLocalOptions } from "./cursorLocalOptions.js"
 
 type CursorWorkerInput = {
@@ -676,7 +676,17 @@ async function analyzeHookEmotionDrift(options: {
     })
     const collectedRun = await collectCursorRun(analysisRun)
     const analysisFinishedAt = new Date().toISOString()
-    const analysis = normalizeHookEmotionAnalysis(collectedRun.text, options.currentSins)
+
+    let analysis: { summary: string; targetSins: Record<CharacterSinName, number> }
+    try {
+      analysis = normalizeHookEmotionAnalysis(collectedRun.text, options.currentSins)
+    } catch (parseErr) {
+      console.warn(`[EmotionDrift] JSON parse failed, using fallback. Raw: "${collectedRun.text.substring(0, 200)}"`)
+      analysis = {
+        summary: "感情分析に失敗したため、現在の状態を維持します。",
+        targetSins: { ...options.currentSins },
+      }
+    }
 
     return {
       summary: analysis.summary,
@@ -698,6 +708,28 @@ async function analyzeHookEmotionDrift(options: {
         usage: collectedRun.usage,
       },
     }
+  } catch (err) {
+    console.warn(`[EmotionDrift] Analysis failed entirely: ${err instanceof Error ? err.message : String(err)}`)
+    return {
+      summary: "感情分析スキップ",
+      targetSins: { ...options.currentSins },
+      telemetry: {
+        browserSessionId: options.browserSessionId,
+        durationMs: 0,
+        error: err instanceof Error ? err.message : String(err),
+        finishedAt: new Date().toISOString(),
+        model: options.emotionModel,
+        providerSessionId: options.providerSessionId,
+        requestRunId: options.requestRunId,
+        sdkRunId: "",
+        stage: "emotion-drift" as const,
+        startedAt: analysisStartedAt,
+        status: "error",
+        statusHistory: ["error"],
+        toolCalls: [] as CursorToolCallTelemetry[],
+        usage: null,
+      },
+    }
   } finally {
     if (typeof analysisAgent[Symbol.asyncDispose] === "function") {
       await analysisAgent[Symbol.asyncDispose]()
@@ -715,10 +747,15 @@ function buildHookEmotionPrompt(options: {
   return [
     "あなたは hidden emotional drift analyst です。",
     "配信の1ターンが完了した直後に、内部キャラクター state の seven deadly sins をどう上下させるかだけを決めてください。",
-    "必ず JSON のみで返してください。",
+    "",
+    "【絶対ルール】",
+    "- 応答は ```json コードブロックで囲んだ JSON のみ",
+    "- JSON ブロックの前後に任何のテキスト・説明・markdown も付けない",
+    "- 文字列内に { や } を含めないこと",
+    "",
     `現在値は ${characterSinNames.join(", ")} の7軸で、それぞれ 0-100 の整数です。`,
     "出力スキーマ:",
-    '{ "summary": "", "targetSins": { "pride": 50, "greed": 50, "envy": 50, "wrath": 50, "sloth": 50, "lust": 50, "gluttony": 50 }, "reasoning": [""] }',
+    '```json\n{"summary": "", "targetSins": {"pride": 50, "greed": 50, "envy": 50, "wrath": 50, "sloth": 50, "lust": 50, "gluttony": 50}, "reasoning": [""]}\n```',
     "ルール:",
     "- 現在値を起点に、今回の返答と演出意図を見て次の目標値を決める。",
     "- 反応が弱い軸は据え置きでよい。毎回すべてを大きく動かさない。",
