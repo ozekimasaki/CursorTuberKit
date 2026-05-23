@@ -74,9 +74,12 @@ function parseDirectorResponse(text: string | undefined): DirectorDecision {
     return createFallback()
   }
 
-  // Extract JSON from possible markdown code blocks
-  const jsonMatch = text.match(/```json\s*([\s\S]*?)```/) || text.match(/\{[\s\S]*\}/)
-  const jsonStr = jsonMatch ? jsonMatch[1] ?? jsonMatch[0] : text
+  // Extract JSON using proper brace matching
+  const jsonStr = extractFirstJsonObject(text)
+  if (!jsonStr) {
+    console.error(`[DopamineDirector] No valid JSON found in response. Raw: "${text.substring(0, 300)}"`)
+    return createFallback()
+  }
 
   try {
     const data = JSON.parse(jsonStr) as Record<string, unknown>
@@ -90,9 +93,47 @@ function parseDirectorResponse(text: string | undefined): DirectorDecision {
       shouldMutant: Boolean(data.shouldMutant),
     }
   } catch (err) {
-    console.error(`[DopamineDirector] JSON parse failed: ${err instanceof Error ? err.message : String(err)}. Raw: "${text.substring(0, 300)}"`)
+    console.error(`[DopamineDirector] JSON parse failed: ${err instanceof Error ? err.message : String(err)}. Extracted JSON: "${jsonStr.substring(0, 200)}"`)
     return createFallback()
   }
+}
+
+function extractFirstJsonObject(text: string): string | null {
+  // Try fenced code block first
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)
+  if (fenced?.[1]) {
+    const candidate = fenced[1].trim()
+    if (candidate.startsWith("{") && candidate.endsWith("}")) {
+      try {
+        JSON.parse(candidate)
+        return candidate
+      } catch {
+        // Fall through
+      }
+    }
+  }
+
+  // Find first opening brace and match to closing brace
+  const first = text.indexOf("{")
+  if (first < 0) return null
+
+  let depth = 0
+  let last = -1
+  for (let i = first; i < text.length; i++) {
+    const char = text[i]
+    if (char === "{") {
+      depth++
+    } else if (char === "}") {
+      depth--
+      if (depth === 0) {
+        last = i
+        break
+      }
+    }
+  }
+
+  if (last < 0) return null
+  return text.slice(first, last + 1)
 }
 
 function createFallback(): DirectorDecision {

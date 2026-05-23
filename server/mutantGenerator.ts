@@ -53,8 +53,10 @@ export async function generateDynamicEffect(requestText: string): Promise<Genera
 }
 
 function parseGeneratedEffect(text: string): GeneratedEffect {
-  const jsonMatch = text.match(/```json\s*([\s\S]*?)```/) || text.match(/\{[\s\S]*\}/)
-  const jsonStr = jsonMatch ? jsonMatch[1] ?? jsonMatch[0] : text
+  const jsonStr = extractFirstJsonObject(text)
+  if (!jsonStr) {
+    return createFallbackEffect()
+  }
 
   try {
     const data = JSON.parse(jsonStr) as Record<string, unknown>
@@ -67,15 +69,55 @@ function parseGeneratedEffect(text: string): GeneratedEffect {
       createdAt: new Date().toISOString(),
     }
   } catch {
-    const id = `mutant-fallback-${Date.now()}`
-    return {
-      id,
-      name: "Fallback Shake",
-      cssKeyframes: `@keyframes ${id} { 0%,100%{transform:translate(0)} 25%{transform:translate(-4px,2px)} 50%{transform:translate(4px,-2px)} 75%{transform:translate(-2px,-4px)} }`,
-      cssClass: `.${id} { animation: ${id} 0.8s ease-in-out; }`,
-      createdAt: new Date().toISOString(),
+    return createFallbackEffect()
+  }
+}
+
+function createFallbackEffect(): GeneratedEffect {
+  const id = `mutant-fallback-${Date.now()}`
+  return {
+    id,
+    name: "Fallback Shake",
+    cssKeyframes: `@keyframes ${id} { 0%,100%{transform:translate(0)} 25%{transform:translate(-4px,2px)} 50%{transform:translate(4px,-2px)} 75%{transform:translate(-2px,-4px)} }`,
+    cssClass: `.${id} { animation: ${id} 0.8s ease-in-out; }`,
+    createdAt: new Date().toISOString(),
+  }
+}
+
+function extractFirstJsonObject(text: string): string | null {
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)
+  if (fenced?.[1]) {
+    const candidate = fenced[1].trim()
+    if (candidate.startsWith("{") && candidate.endsWith("}")) {
+      try {
+        JSON.parse(candidate)
+        return candidate
+      } catch {
+        // Fall through
+      }
     }
   }
+
+  const first = text.indexOf("{")
+  if (first < 0) return null
+
+  let depth = 0
+  let last = -1
+  for (let i = first; i < text.length; i++) {
+    const char = text[i]
+    if (char === "{") {
+      depth++
+    } else if (char === "}") {
+      depth--
+      if (depth === 0) {
+        last = i
+        break
+      }
+    }
+  }
+
+  if (last < 0) return null
+  return text.slice(first, last + 1)
 }
 
 export function getGeneratedEffects(): GeneratedEffect[] {

@@ -31,8 +31,10 @@ async function askAgentForProposal(
 }
 
 function parseAgentProposal(text: string, agentName: string): AgentMutationProposal {
-  const jsonMatch = text.match(/```json\s*([\s\S]*?)```/) || text.match(/\{[\s\S]*\}/)
-  const jsonStr = jsonMatch ? jsonMatch[1] ?? jsonMatch[0] : text
+  const jsonStr = extractFirstJsonObject(text)
+  if (!jsonStr) {
+    return createFallbackProposal(agentName)
+  }
 
   try {
     const data = JSON.parse(jsonStr) as Record<string, unknown>
@@ -48,6 +50,42 @@ function parseAgentProposal(text: string, agentName: string): AgentMutationPropo
   } catch {
     return createFallbackProposal(agentName)
   }
+}
+
+function extractFirstJsonObject(text: string): string | null {
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)
+  if (fenced?.[1]) {
+    const candidate = fenced[1].trim()
+    if (candidate.startsWith("{") && candidate.endsWith("}")) {
+      try {
+        JSON.parse(candidate)
+        return candidate
+      } catch {
+        // Fall through
+      }
+    }
+  }
+
+  const first = text.indexOf("{")
+  if (first < 0) return null
+
+  let depth = 0
+  let last = -1
+  for (let i = first; i < text.length; i++) {
+    const char = text[i]
+    if (char === "{") {
+      depth++
+    } else if (char === "}") {
+      depth--
+      if (depth === 0) {
+        last = i
+        break
+      }
+    }
+  }
+
+  if (last < 0) return null
+  return text.slice(first, last + 1)
 }
 
 function createFallbackProposal(agentName: string): AgentMutationProposal {

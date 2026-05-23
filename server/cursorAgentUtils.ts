@@ -13,6 +13,7 @@ export function extractJsonObject(
     throw createError(`${label} was empty`)
   }
 
+  // Try fenced code block first
   const fenced = normalized.match(/```(?:json)?\s*([\s\S]*?)```/i)
   if (fenced?.[1]) {
     const candidate = fenced[1].trim()
@@ -21,14 +22,40 @@ export function extractJsonObject(
     }
   }
 
+  // If entire text is a JSON object, use it directly
   if (normalized.startsWith("{") && normalized.endsWith("}")) {
-    return normalized
+    try {
+      JSON.parse(normalized)
+      return normalized
+    } catch {
+      // Fall through to brace matching
+    }
   }
 
+  // Find first opening brace
   const first = normalized.indexOf("{")
-  const last = normalized.lastIndexOf("}")
-  if (first < 0 || last <= first) {
+  if (first < 0) {
     throw createError(`${label} did not contain JSON`)
+  }
+
+  // Find matching closing brace by counting depth
+  let depth = 0
+  let last = -1
+  for (let i = first; i < normalized.length; i++) {
+    const char = normalized[i]
+    if (char === "{") {
+      depth++
+    } else if (char === "}") {
+      depth--
+      if (depth === 0) {
+        last = i
+        break
+      }
+    }
+  }
+
+  if (last < 0) {
+    throw createError(`${label} did not contain a complete JSON object`)
   }
 
   return normalized.slice(first, last + 1)
