@@ -116,12 +116,24 @@ function parseMutationOutput(raw: string, current: ChatSettings): LiveMutationRe
   const json = extractJsonObject(raw, "Live mutation output", (message) => new LiveMutationError(message))
   const parsed = JSON.parse(json) as Record<string, unknown>
 
+  const isPartial = Math.random() < 0.2
+
   const characterPrompt =
     typeof parsed.characterPrompt === "string" ? parsed.characterPrompt.trim() : current.characterPrompt
   const characterFullPrompt =
     typeof parsed.characterFullPrompt === "string" ? parsed.characterFullPrompt.trim() : current.characterFullPrompt
-  const summary = typeof parsed.summary === "string" ? parsed.summary.trim() : "プロンプトを書き換えました。"
-  const monologue = typeof parsed.monologue === "string" ? parsed.monologue.trim() : "...変わった気がする。"
+  const summary = isPartial
+    ? `（中途半端）${typeof parsed.summary === "string" ? parsed.summary.trim() : "変わりきれなかった..."}`
+    : typeof parsed.summary === "string"
+      ? parsed.summary.trim()
+      : "プロンプトを書き換えました。"
+  const monologue = isPartial
+    ? typeof parsed.monologue === "string"
+      ? `${parsed.monologue.trim()}...でも、本当は少しだけ戻りたい気もする。`
+      : "ううん、変わりきれない...でも少しだけ、違う感じ。"
+    : typeof parsed.monologue === "string"
+      ? parsed.monologue.trim()
+      : "...変わった気がする。"
   const visualEffectRaw = typeof parsed.visualEffect === "string" ? parsed.visualEffect : "none"
   const visualEffect = ["none", "glitch", "hue_shift", "intense"].includes(visualEffectRaw)
     ? (visualEffectRaw as "none" | "glitch" | "hue_shift" | "intense")

@@ -41,6 +41,7 @@ import { fetchVoicevoxSpeakers, getVoicevoxHealth, synthesizeVoice, VoicevoxErro
 import { AutopilotPlannerError, runAutopilotPlanner } from "./autopilotPlanner.js"
 import { PersonaCuratorError, runPersonaCurator } from "./personaCurator.js"
 import { LiveMutationError, runLiveMutation } from "./liveSelfRewrite.js"
+import { HeavyMutationError, runHeavyMutation } from "./heavySelfRewrite.js"
 import type { PersonaAutoRewriteRequestBody, PersonaAutoRewriteResponse } from "../shared/personaCurator.js"
 import { normalizeAppSettings, type AppSettings } from "../shared/appSettings.js"
 import { describeToneDirective } from "../shared/sinsBias.js"
@@ -898,6 +899,57 @@ app.post(
       })
     } catch (error) {
       const status = error instanceof LiveMutationError ? 502 : 500
+      response.status(status).json({ error: getErrorMessage(error) })
+    }
+  }),
+)
+
+app.post(
+  "/api/character/heavy-rewrite",
+  asyncRoute(async (request, response) => {
+    const body = request.body as Record<string, unknown>
+    const cueText = typeof body.cueText === "string" ? body.cueText : undefined
+
+    const apiKey = process.env.CURSOR_API_KEY?.trim()
+    if (!apiKey) {
+      response.status(503).json({ error: "CURSOR_API_KEY が未設定です。" })
+      return
+    }
+
+    let chatSettings: import("../shared/chatSettings.js").ChatSettings
+    try {
+      chatSettings = await readChatSettings()
+    } catch (error) {
+      response.status(500).json({ error: getErrorMessage(error) })
+      return
+    }
+
+    const route = resolveAiMetadata()
+    const mutatorModel = appConfig.cursor.personaCuratorModel || route.characterAgentModel || route.model
+
+    try {
+      const result = await runHeavyMutation({
+        apiKey,
+        model: mutatorModel,
+        currentSettings: chatSettings,
+        cueText,
+        signal: readRequestSignal(request),
+      })
+
+      const saved = await updateChatSettings({
+        characterPrompt: result.characterPrompt,
+        characterFullPrompt: result.characterFullPrompt,
+      })
+
+      response.json({
+        settings: saved,
+        summary: result.summary,
+        monologue: result.monologue,
+        visualEffect: result.visualEffect,
+        updatedAt: new Date().toISOString(),
+      })
+    } catch (error) {
+      const status = error instanceof HeavyMutationError ? 502 : 500
       response.status(status).json({ error: getErrorMessage(error) })
     }
   }),

@@ -71,7 +71,7 @@ import { fetchRuntimeStatus, isChatRunRecap, normalizeCharacterRuleStatus, type 
 import type { Viseme } from "./lib/visemes"
 import { synthesizeVoice } from "./lib/voicevox"
 import { requestAutopilotTopic } from "./lib/autopilot"
-import { requestLiveMutation } from "./lib/liveSelfRewrite"
+import { requestLiveMutation, requestHeavyMutation } from "./lib/liveSelfRewrite"
 import {
   AUTO_REPLY_BRIDGE_DELAY_MS,
   AUTO_REPLY_BRIDGE_TEXT,
@@ -345,6 +345,16 @@ export function App() {
     return () => abortController.abort()
   }, [])
 
+  // Heavy mutation auto-trigger every 2 minutes
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (dopamine.isHeavyMutationReady() && Math.random() < 0.5) {
+        void triggerHeavyPersonaMutation()
+      }
+    }, 2 * 60 * 1000)
+    return () => clearInterval(interval)
+  }, [])
+
   function handleStreamScreenModeChange(enabled: boolean) {
     setStreamScreenMode(enabled)
 
@@ -472,6 +482,43 @@ export function App() {
       }
     } catch (error) {
       console.warn("[liveMutation] failed:", error)
+    } finally {
+      dopamine.setLiveMutationBusy(false)
+    }
+  }
+
+  async function triggerHeavyPersonaMutation(cueText?: string) {
+    if (!dopamine.isHeavyMutationReady()) return
+    dopamine.setLiveMutationBusy(true)
+    try {
+      const result = await requestHeavyMutation({ cueText })
+      setChatSettings({
+        ...chatSettings,
+        characterPrompt: result.settings.characterPrompt,
+        characterFullPrompt: result.settings.characterFullPrompt,
+      })
+      dopamine.pushPersonaMutation({
+        id: crypto.randomUUID(),
+        previousPrompt: chatSettings.characterPrompt,
+        nextPrompt: result.settings.characterPrompt,
+        summary: result.summary,
+        monologue: result.monologue,
+        cue: {
+          kind: cueText ? "comment_keyword" : "autopilot_boredom",
+          text: cueText,
+          intensity: 1.0,
+          receivedAt: new Date().toISOString(),
+        },
+        appliedAt: new Date().toISOString(),
+        partial: false,
+      })
+      // Stronger visual effect for heavy mutation
+      dopamine.triggerManualCue("surprised")
+      if (voiceEnabled && result.monologue) {
+        void runPrompt(result.monologue, { interruptCurrent: false })
+      }
+    } catch (error) {
+      console.warn("[heavyMutation] failed:", error)
     } finally {
       dopamine.setLiveMutationBusy(false)
     }
