@@ -749,7 +749,7 @@ export function App() {
       }
 
       setLiveViewerEvents((current) => insertViewerEvent(current, viewerEvent))
-      dopamine.triggerCueFromComment(viewerEvent)
+      void dopamine.triggerCueFromComment(viewerEvent)
 
       // Random live persona mutation trigger (20% chance when cooldown ready)
       if (

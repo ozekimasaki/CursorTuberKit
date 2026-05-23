@@ -42,6 +42,9 @@ import { AutopilotPlannerError, runAutopilotPlanner } from "./autopilotPlanner.j
 import { PersonaCuratorError, runPersonaCurator } from "./personaCurator.js"
 import { LiveMutationError, runLiveMutation } from "./liveSelfRewrite.js"
 import { HeavyMutationError, runHeavyMutation } from "./heavySelfRewrite.js"
+import { applyDirectorDecision, decideMutation } from "./dopamineDirector.js"
+import { voteMutationFromAgents } from "./agents/dopamineAgents.js"
+import { generateDynamicEffect, getGeneratedEffects, clearGeneratedEffects } from "./mutantGenerator.js"
 import type { PersonaAutoRewriteRequestBody, PersonaAutoRewriteResponse } from "../shared/personaCurator.js"
 import { normalizeAppSettings, type AppSettings } from "../shared/appSettings.js"
 import { describeToneDirective } from "../shared/sinsBias.js"
@@ -952,6 +955,92 @@ app.post(
       const status = error instanceof HeavyMutationError ? 502 : 500
       response.status(status).json({ error: getErrorMessage(error) })
     }
+  }),
+)
+
+// --- Dopamine AI Director Endpoints ---
+
+app.post(
+  "/api/dopamine/direct",
+  asyncRoute(async (request, response) => {
+    const body = request.body as Record<string, unknown>
+    const commentText = typeof body.commentText === "string" ? body.commentText : ""
+    const currentEmotion = typeof body.currentEmotion === "string" ? body.currentEmotion : "neutral"
+    const recentComments = Array.isArray(body.recentComments) ? body.recentComments.map(String) : []
+
+    const apiKey = process.env.CURSOR_API_KEY?.trim()
+    if (!apiKey) {
+      response.status(503).json({ error: "CURSOR_API_KEY が未設定です。" })
+      return
+    }
+
+    try {
+      const decision = await decideMutation(commentText, currentEmotion, recentComments)
+      response.json({
+        decision,
+        cue: applyDirectorDecision(decision, commentText, new Date().toISOString()),
+      })
+    } catch (error) {
+      response.status(500).json({ error: getErrorMessage(error) })
+    }
+  }),
+)
+
+app.post(
+  "/api/dopamine/vote",
+  asyncRoute(async (request, response) => {
+    const body = request.body as Record<string, unknown>
+    const commentText = typeof body.commentText === "string" ? body.commentText : ""
+    const currentEmotion = typeof body.currentEmotion === "string" ? body.currentEmotion : "neutral"
+
+    const apiKey = process.env.CURSOR_API_KEY?.trim()
+    if (!apiKey) {
+      response.status(503).json({ error: "CURSOR_API_KEY が未設定です。" })
+      return
+    }
+
+    try {
+      const proposal = await voteMutationFromAgents(commentText, currentEmotion)
+      response.json({ proposal })
+    } catch (error) {
+      response.status(500).json({ error: getErrorMessage(error) })
+    }
+  }),
+)
+
+app.post(
+  "/api/dopamine/mutant",
+  asyncRoute(async (request, response) => {
+    const body = request.body as Record<string, unknown>
+    const requestText = typeof body.requestText === "string" ? body.requestText : "新しいエフェクト"
+
+    const apiKey = process.env.CURSOR_API_KEY?.trim()
+    if (!apiKey) {
+      response.status(503).json({ error: "CURSOR_API_KEY が未設定です。" })
+      return
+    }
+
+    try {
+      const effect = await generateDynamicEffect(requestText)
+      response.json({ effect })
+    } catch (error) {
+      response.status(500).json({ error: getErrorMessage(error) })
+    }
+  }),
+)
+
+app.get(
+  "/api/dopamine/effects",
+  asyncRoute(async (_request, response) => {
+    response.json({ effects: getGeneratedEffects() })
+  }),
+)
+
+app.delete(
+  "/api/dopamine/effects",
+  asyncRoute(async (_request, response) => {
+    clearGeneratedEffects()
+    response.json({ ok: true })
   }),
 )
 

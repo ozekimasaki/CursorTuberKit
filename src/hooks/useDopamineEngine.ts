@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState, useEffect } from "react"
 import type {
+  DirectorDecision,
   DopamineState,
   MutationCue,
   PersonaMutation,
@@ -17,11 +18,11 @@ import type { PlatformViewerEvent } from "../../shared/platformChat"
 
 const MORPH_INTERVAL_MS = 100
 const HEAVY_MUTATION_COOLDOWN_MS = 60_000
-const CHAIN_REACTION_CHANCE = 0.15
+const CHAIN_REACTION_CHANCE = 0.2
 
 export type DopamineEngine = {
   state: DopamineState
-  triggerCueFromComment: (event: PlatformViewerEvent) => void
+  triggerCueFromComment: (event: PlatformViewerEvent) => Promise<void>
   triggerManualCue: (emotionTag?: string) => void
   pushPersonaMutation: (mutation: PersonaMutation) => void
   undoLastMutation: () => void
@@ -95,7 +96,7 @@ export function useDopamineEngine(): DopamineEngine {
   )
 
   const triggerCue = useCallback(
-    (cue: MutationCue) => {
+    (cue: MutationCue, decision?: DirectorDecision) => {
       const targetVisual = cueToVisualParams(cue)
       const voice = cueToVoiceParams(cue)
 
@@ -106,6 +107,7 @@ export function useDopamineEngine(): DopamineEngine {
           targetVisual,
           voice,
           activeCue: cue,
+          lastDirectorDecision: decision ?? prev.lastDirectorDecision,
         }
         return next
       })
@@ -113,25 +115,85 @@ export function useDopamineEngine(): DopamineEngine {
       // Start the visual morph animation
       startMorphing(targetVisual, targetVisual.morphDurationMs)
 
-      // Random chain reaction
+      // Random chain reaction (higher chance with AI director)
       if (Math.random() < CHAIN_REACTION_CHANCE) {
         setTimeout(() => {
           const chainCue: MutationCue = {
             kind: "chain_reaction",
-            intensity: 0.8,
+            intensity: 0.85,
             receivedAt: new Date().toISOString(),
           }
           triggerCue(chainCue)
-        }, targetVisual.morphDurationMs + 500)
+        }, targetVisual.morphDurationMs + 400)
       }
     },
     [startMorphing],
   )
 
   const triggerCueFromComment = useCallback(
-    (event: PlatformViewerEvent) => {
+    async (event: PlatformViewerEvent) => {
       if (event.kind !== "comment" || !event.text) return
       const cue = buildCommentCue(event.text, event.receivedAt)
+
+      // Fire-and-forget agent voting for telemetry / future use
+      try {
+        fetch("/api/dopamine/vote", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            commentText: event.text,
+            currentEmotion: cue.emotionTag || "neutral",
+          }),
+        }).catch(() => undefined)
+      } catch {
+        // ignore
+      }
+
+      // Try AI director first
+      try {
+        const res = await fetch("/api/dopamine/direct", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            commentText: event.text,
+            currentEmotion: cue.emotionTag || "neutral",
+            recentComments: [],
+          }),
+        })
+        if (res.ok) {
+          const data = (await res.json()) as {
+            decision: DirectorDecision
+            cue: MutationCue
+          }
+          const mergedCue: MutationCue = {
+            ...data.cue,
+            meta: {
+              glitchTypes: data.decision.glitchTypes,
+              visualMultiplier: data.decision.visualMultiplier,
+              voiceMultiplier: data.decision.voiceMultiplier,
+              reasoning: data.decision.reasoning,
+            },
+          }
+          triggerCue(mergedCue, data.decision)
+
+          // If director says generate a new effect, fire-and-forget
+          if (data.decision.shouldMutant) {
+            try {
+              fetch("/api/dopamine/mutant", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ requestText: event.text }),
+              }).catch(() => undefined)
+            } catch {
+              // ignore
+            }
+          }
+          return
+        }
+      } catch {
+        // fallback to local
+      }
+
       triggerCue(cue)
     },
     [triggerCue],

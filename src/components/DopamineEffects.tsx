@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import type { DopamineState } from "../../shared/dopamineMutation"
+import type { DopamineState, GeneratedEffect } from "../../shared/dopamineMutation"
 
 const GLITCH_VARIANTS = [
   "dopamine-invert-flash",
@@ -12,6 +12,11 @@ const GLITCH_VARIANTS = [
   "dopamine-frame-drop",
   "dopamine-data-moshing",
   "dopamine-shake",
+  "dopamine-hue-spin",
+  "dopamine-skew-warp",
+  "dopamine-rotate-spin",
+  "dopamine-saturate-flash",
+  "dopamine-ghost-trail",
 ]
 
 function pickGlitchVariants(count: number): string[] {
@@ -31,23 +36,70 @@ export function DopamineEffects({ state, children }: DopamineEffectsProps) {
   const [glitchClasses, setGlitchClasses] = useState<string[]>([])
   const [shakeActive, setShakeActive] = useState(false)
   const prevCueRef = useRef<string | undefined>(undefined)
+  const [generatedEffects, setGeneratedEffects] = useState<GeneratedEffect[]>([])
 
   const isGlitching = phase === "morphing" || phase === "triggered"
   const isShaking = visual.shakeIntensity > 0.3
 
-  // Trigger random glitches on new cue
+  // Poll generated effects periodically
+  useEffect(() => {
+    let mounted = true
+    const fetchEffects = async () => {
+      try {
+        const res = await fetch("/api/dopamine/effects")
+        if (res.ok && mounted) {
+          const data = (await res.json()) as { effects: GeneratedEffect[] }
+          setGeneratedEffects(data.effects)
+        }
+      } catch {
+        // ignore
+      }
+    }
+    fetchEffects()
+    const interval = setInterval(fetchEffects, 5000)
+    return () => {
+      mounted = false
+      clearInterval(interval)
+    }
+  }, [activeCue?.receivedAt])
+
+  // Inject generated CSS
+  useEffect(() => {
+    const styleId = "dopamine-generated-effects"
+    let styleTag = document.getElementById(styleId) as HTMLStyleElement | null
+    if (!styleTag) {
+      styleTag = document.createElement("style")
+      styleTag.id = styleId
+      document.head.appendChild(styleTag)
+    }
+    styleTag.textContent = generatedEffects.map((e) => `${e.cssKeyframes}\n${e.cssClass}`).join("\n\n")
+  }, [generatedEffects])
+
+  // Trigger MASSIVE glitches on EVERY comment - use AI director glitch types if available
   useEffect(() => {
     const cueId = activeCue?.receivedAt
     if (cueId && cueId !== prevCueRef.current) {
       prevCueRef.current = cueId
-      // 80% chance of 2 glitches, 40% chance of 3
-      const variantCount = Math.random() < 0.4 ? 3 : Math.random() < 0.8 ? 2 : 1
-      const variants = pickGlitchVariants(variantCount)
+      const aiGlitchTypes = activeCue?.meta?.glitchTypes
+      let variants: string[]
+
+      if (aiGlitchTypes && aiGlitchTypes.length > 0) {
+        // AI selected glitches
+        const mapped = aiGlitchTypes
+          .map((g) => `dopamine-${g}`)
+          .filter((g) => GLITCH_VARIANTS.includes(g))
+        variants = mapped.length > 0 ? mapped : pickGlitchVariants(4)
+      } else {
+        const roll = Math.random()
+        const variantCount = roll < 0.4 ? 5 : roll < 0.7 ? 4 : roll < 0.9 ? 3 : 2
+        variants = pickGlitchVariants(variantCount)
+      }
+
       setGlitchClasses(variants)
       setShakeActive(true)
 
-      // Duration: 1.5s ~ 3.0s based on intensity
-      const duration = 1500 + (visual.glitchIntensity ?? 0.5) * 1500
+      // Duration: 2.0s ~ 5.0s based on intensity
+      const duration = 2000 + (visual.glitchIntensity ?? 0.5) * 3000
       const timer = setTimeout(() => {
         setGlitchClasses([])
         setShakeActive(false)

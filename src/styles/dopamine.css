@@ -177,6 +177,56 @@
   100% { filter: none; }
 }
 
+@keyframes dopamine-hue-spin {
+  0% { filter: hue-rotate(0deg); }
+  20% { filter: hue-rotate(90deg); }
+  40% { filter: hue-rotate(180deg); }
+  60% { filter: hue-rotate(270deg); }
+  80% { filter: hue-rotate(360deg); }
+  100% { filter: hue-rotate(0deg); }
+}
+
+@keyframes dopamine-skew-warp {
+  0% { transform: skew(0deg, 0deg); }
+  15% { transform: skew(10deg, -5deg); }
+  30% { transform: skew(-8deg, 8deg); }
+  45% { transform: skew(5deg, -10deg); }
+  60% { transform: skew(-10deg, 5deg); }
+  75% { transform: skew(3deg, -3deg); }
+  100% { transform: skew(0deg, 0deg); }
+}
+
+@keyframes dopamine-rotate-spin {
+  0% { transform: rotate(0deg); }
+  25% { transform: rotate(5deg); }
+  50% { transform: rotate(-3deg); }
+  75% { transform: rotate(2deg); }
+  100% { transform: rotate(0deg); }
+}
+
+@keyframes dopamine-saturate-flash {
+  0% { filter: saturate(1); }
+  20% { filter: saturate(3); }
+  40% { filter: saturate(0.3); }
+  60% { filter: saturate(2.5); }
+  80% { filter: saturate(0.5); }
+  100% { filter: saturate(1); }
+}
+
+@keyframes dopamine-ghost-trail {
+  0% { opacity: 1; }
+  10% { opacity: 0.8; transform: translateX(-5px); }
+  20% { opacity: 0.6; transform: translateX(5px); }
+  30% { opacity: 0.8; transform: translateX(-3px); }
+  40% { opacity: 0.5; transform: translateX(3px); }
+  50% { opacity: 0.9; transform: translateX(-2px); }
+  60% { opacity: 0.7; transform: translateX(2px); }
+  70% { opacity: 0.8; transform: translateX(-4px); }
+  80% { opacity: 0.6; transform: translateX(4px); }
+  90% { opacity: 0.9; transform: translateX(-1px); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+
 .dopamine-effects {
   position: relative;
   width: 100%;
@@ -233,6 +283,26 @@
 
 .dopamine-effects__layer.dopamine-data-moshing {
   animation: dopamine-data-moshing 1.5s ease-in-out;
+}
+
+.dopamine-effects__layer.dopamine-hue-spin {
+  animation: dopamine-hue-spin 2s ease-in-out;
+}
+
+.dopamine-effects__layer.dopamine-skew-warp {
+  animation: dopamine-skew-warp 1.8s ease-in-out;
+}
+
+.dopamine-effects__layer.dopamine-rotate-spin {
+  animation: dopamine-rotate-spin 1.5s ease-in-out;
+}
+
+.dopamine-effects__layer.dopamine-saturate-flash {
+  animation: dopamine-saturate-flash 1.5s ease-in-out;
+}
+
+.dopamine-effects__layer.dopamine-ghost-trail {
+  animation: dopamine-ghost-trail 2s ease-in-out;
 }
 
 /* Protected content layer - NO filters/glitches applied */

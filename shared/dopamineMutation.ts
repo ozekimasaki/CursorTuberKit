@@ -13,6 +13,9 @@ export type MutationCueKind =
   | "manual"
   | "autopilot_boredom"
   | "chain_reaction"
+  | "ai_director"
+  | "agent_vote"
+  | "mutant_effect"
 
 export type MutationCue = {
   kind: MutationCueKind
@@ -20,6 +23,14 @@ export type MutationCue = {
   emotionTag?: string
   intensity: number // 0..1
   receivedAt: string
+  /** AI agent-provided override metadata */
+  meta?: {
+    glitchTypes?: string[]
+    visualMultiplier?: number
+    voiceMultiplier?: number
+    reasoning?: string
+    agentName?: string
+  }
 }
 
 export type VisualMutationParams = {
@@ -68,6 +79,34 @@ export type PersonaMutation = {
   partial: boolean
 }
 
+export type AgentMutationProposal = {
+  agentName: string
+  emotionTag: string
+  intensity: number
+  reasoning: string
+  glitchTypes: string[]
+  visualMultiplier: number
+  voiceMultiplier: number
+}
+
+export type GeneratedEffect = {
+  id: string
+  name: string
+  cssKeyframes: string
+  cssClass: string
+  createdAt: string
+}
+
+export type DirectorDecision = {
+  emotionTag: string
+  intensity: number
+  reasoning: string
+  glitchTypes: string[]
+  visualMultiplier: number
+  voiceMultiplier: number
+  shouldMutant: boolean
+}
+
 export type DopamineState = {
   phase: MutationPhase
   /** Current visual params (may be animating) */
@@ -82,6 +121,10 @@ export type DopamineState = {
   heavyCooldownUntil: number
   /** Current mutation cue that triggered the active effect */
   activeCue: MutationCue | null
+  /** Latest AI director decision (for display/debug) */
+  lastDirectorDecision: DirectorDecision | null
+  /** Active generated effects applied */
+  activeGeneratedEffects: GeneratedEffect[]
 }
 
 export const DEFAULT_VISUAL_MUTATION: VisualMutationParams = {
@@ -113,6 +156,8 @@ export function createDefaultDopamineState(): DopamineState {
     personaHistory: [],
     heavyCooldownUntil: 0,
     activeCue: null,
+    lastDirectorDecision: null,
+    activeGeneratedEffects: [],
   }
 }
 
@@ -175,15 +220,17 @@ export function buildCommentCue(text: string, receivedAt: string): MutationCue {
 export function cueToVisualParams(cue: MutationCue): VisualMutationParams {
   const hueShift = emotionToHueShift(cue.emotionTag ?? "neutral")
   const baseIntensity = cue.intensity
+  const vm = cue.meta?.visualMultiplier ?? 1
+  const vmClamped = Math.min(3, Math.max(0.3, vm))
 
   return {
     backgroundHueShift: hueShift,
-    backgroundSatMul: 1 + baseIntensity * 0.5,
+    backgroundSatMul: 1 + baseIntensity * 0.5 * vmClamped,
     captionColor: pickCaptionColor(cue.emotionTag ?? "neutral"),
-    captionWeight: 400 + Math.floor(baseIntensity * 300),
-    captionSizeMul: 1 + baseIntensity * 0.3,
-    glitchIntensity: cue.kind === "chain_reaction" ? 0.95 : Math.min(1.0, baseIntensity * 1.2),
-    shakeIntensity: cue.kind === "chain_reaction" ? 1.0 : Math.min(1.0, baseIntensity * 1.0),
+    captionWeight: 400 + Math.floor(baseIntensity * 300 * vmClamped),
+    captionSizeMul: 1 + baseIntensity * 0.3 * vmClamped,
+    glitchIntensity: cue.kind === "chain_reaction" ? 0.95 : Math.min(1.0, baseIntensity * 1.2 * vmClamped),
+    shakeIntensity: cue.kind === "chain_reaction" ? 1.0 : Math.min(1.0, baseIntensity * 1.0 * vmClamped),
     frameGlowColor: pickGlowColor(cue.emotionTag ?? "neutral"),
     morphDurationMs: 1500 + Math.floor(baseIntensity * 1500),
     backgroundPresetId: emotionToBackgroundPresetId(cue.emotionTag ?? "neutral"),
@@ -235,21 +282,31 @@ function pickGlowColor(emotion: string): string | null {
 /** Compute voice mutation params from a cue */
 export function cueToVoiceParams(cue: MutationCue): VoiceMutationParams {
   const emotion = cue.emotionTag ?? "neutral"
-  switch (emotion) {
-    case "angry":
-      return { speedDelta: 0.2, pitchDelta: 0.08, intonationDelta: 0.2, speakerId: null }
-    case "happy":
-      return { speedDelta: 0.1, pitchDelta: 0.05, intonationDelta: 0.15, speakerId: null }
-    case "sad":
-      return { speedDelta: -0.15, pitchDelta: -0.08, intonationDelta: -0.2, speakerId: null }
-    case "surprised":
-      return { speedDelta: 0.15, pitchDelta: 0.1, intonationDelta: 0.25, speakerId: null }
-    case "fear":
-      return { speedDelta: 0.1, pitchDelta: 0.05, intonationDelta: -0.1, speakerId: null }
-    case "love":
-      return { speedDelta: -0.05, pitchDelta: -0.03, intonationDelta: 0.1, speakerId: null }
-    default:
-      return { speedDelta: 0, pitchDelta: 0, intonationDelta: 0, speakerId: null }
+  const vo = cue.meta?.voiceMultiplier ?? 1
+  const voClamped = Math.min(3, Math.max(0.3, vo))
+  const base = (() => {
+    switch (emotion) {
+      case "angry":
+        return { speedDelta: 0.2, pitchDelta: 0.08, intonationDelta: 0.2, speakerId: null }
+      case "happy":
+        return { speedDelta: 0.1, pitchDelta: 0.05, intonationDelta: 0.15, speakerId: null }
+      case "sad":
+        return { speedDelta: -0.15, pitchDelta: -0.08, intonationDelta: -0.2, speakerId: null }
+      case "surprised":
+        return { speedDelta: 0.15, pitchDelta: 0.1, intonationDelta: 0.25, speakerId: null }
+      case "fear":
+        return { speedDelta: 0.1, pitchDelta: 0.05, intonationDelta: -0.1, speakerId: null }
+      case "love":
+        return { speedDelta: -0.05, pitchDelta: -0.03, intonationDelta: 0.1, speakerId: null }
+      default:
+        return { speedDelta: 0, pitchDelta: 0, intonationDelta: 0, speakerId: null }
+    }
+  })()
+  return {
+    speedDelta: Math.max(-0.5, Math.min(0.5, base.speedDelta * voClamped)),
+    pitchDelta: Math.max(-0.15, Math.min(0.15, base.pitchDelta * voClamped)),
+    intonationDelta: Math.max(-0.3, Math.min(0.3, base.intonationDelta * voClamped)),
+    speakerId: base.speakerId,
   }
 }
 
