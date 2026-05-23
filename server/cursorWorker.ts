@@ -769,17 +769,62 @@ function normalizeHookEmotionAnalysis(
 }
 
 function extractJsonObject(rawResponse: string) {
-  const firstBraceIndex = rawResponse.indexOf("{")
+  // 1. Try to extract from fenced code block first (most reliable)
+  const fencedMatch = rawResponse.match(/```(?:json)?\s*([\s\S]*?)```/i)
+  if (fencedMatch?.[1]) {
+    const candidate = fencedMatch[1].trim()
+    try {
+      JSON.parse(candidate)
+      return candidate
+    } catch {
+      // Fall through to brace matching
+    }
+  }
 
+  // 2. If entire text looks like a single JSON object, try it
+  const trimmed = rawResponse.trim()
+  if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+    try {
+      JSON.parse(trimmed)
+      return trimmed
+    } catch {
+      // Fall through
+    }
+  }
+
+  // 3. Smart brace matching that ignores braces inside string literals
+  const firstBraceIndex = rawResponse.indexOf("{")
   if (firstBraceIndex < 0) {
     throw new Error("Expected a JSON object in Cursor emotion drift analysis output.")
   }
 
-  // Find matching closing brace by counting depth
   let depth = 0
+  let inString = false
+  let escapeNext = false
   let lastBraceIndex = -1
+
   for (let i = firstBraceIndex; i < rawResponse.length; i++) {
     const char = rawResponse[i]
+
+    if (escapeNext) {
+      escapeNext = false
+      continue
+    }
+
+    if (char === "\\") {
+      escapeNext = true
+      continue
+    }
+
+    if (char === '"') {
+      inString = !inString
+      continue
+    }
+
+    if (inString) {
+      continue
+    }
+
     if (char === "{") {
       depth++
     } else if (char === "}") {
