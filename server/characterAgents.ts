@@ -479,16 +479,40 @@ function extractJsonObject(rawResponse: string) {
   }
 
   if (normalized.startsWith("{") && normalized.endsWith("}")) {
-    return normalized
+    try {
+      JSON.parse(normalized)
+      return normalized
+    } catch {
+      // Fall through to brace matching
+    }
   }
 
-  const match = normalized.match(/\{[\s\S]*\}/)
-
-  if (!match) {
+  // Find first opening brace and match to closing brace by depth
+  const first = normalized.indexOf("{")
+  if (first < 0) {
     throw new Error(`Character agent response did not contain JSON: ${truncateText(normalized, 200)}`)
   }
 
-  return match[0]
+  let depth = 0
+  let last = -1
+  for (let i = first; i < normalized.length; i++) {
+    const char = normalized[i]
+    if (char === "{") {
+      depth++
+    } else if (char === "}") {
+      depth--
+      if (depth === 0) {
+        last = i
+        break
+      }
+    }
+  }
+
+  if (last < 0) {
+    throw new Error(`Character agent response did not contain a complete JSON object: ${truncateText(normalized, 200)}`)
+  }
+
+  return normalized.slice(first, last + 1)
 }
 
 function normalizeEmotion(value: unknown, fallback: Emotion): Emotion {
