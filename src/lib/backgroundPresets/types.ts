@@ -15,4 +15,6 @@ export type BackgroundPreset = {
    * conic-gradient, repeating-* gradients, or inlined data: SVGs only.
    */
   css: string
+  /** Optional emotion tag for dopamine auto-switching */
+  emotionTag?: string
 }

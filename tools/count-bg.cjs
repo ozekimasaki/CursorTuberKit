@@ -1,0 +1,11 @@
+const fs = require('fs');
+const count = (f) => (fs.readFileSync(f, 'utf8').match(/id: "/g) || []).length;
+const atm = count('src/lib/backgroundPresets/atmospheric.ts');
+const geo = count('src/lib/backgroundPresets/geometric.ts');
+const abs = count('src/lib/backgroundPresets/abstract.ts');
+const scn = count('src/lib/backgroundPresets/scene.ts');
+console.log('atmospheric:', atm);
+console.log('geometric:', geo);
+console.log('abstract:', abs);
+console.log('scene:', scn);
+console.log('total:', atm + geo + abs + scn);

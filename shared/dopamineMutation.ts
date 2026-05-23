@@ -41,6 +41,8 @@ export type VisualMutationParams = {
   frameGlowColor: string | null
   /** Duration of the morphing effect in ms */
   morphDurationMs: number
+  /** Background preset id override (null = no change) */
+  backgroundPresetId: string | null
 }
 
 export type VoiceMutationParams = {
@@ -92,6 +94,7 @@ export const DEFAULT_VISUAL_MUTATION: VisualMutationParams = {
   shakeIntensity: 0,
   frameGlowColor: null,
   morphDurationMs: 3000,
+  backgroundPresetId: null,
 }
 
 export const DEFAULT_VOICE_MUTATION: VoiceMutationParams = {
@@ -183,6 +186,7 @@ export function cueToVisualParams(cue: MutationCue): VisualMutationParams {
     shakeIntensity: cue.kind === "chain_reaction" ? 0.8 : baseIntensity * 0.4,
     frameGlowColor: pickGlowColor(cue.emotionTag ?? "neutral"),
     morphDurationMs: 2000 + Math.floor(baseIntensity * 2000),
+    backgroundPresetId: emotionToBackgroundPresetId(cue.emotionTag ?? "neutral"),
   }
 }
 
@@ -246,5 +250,27 @@ export function cueToVoiceParams(cue: MutationCue): VoiceMutationParams {
       return { speedDelta: -0.05, pitchDelta: -0.03, intonationDelta: 0.1, speakerId: null }
     default:
       return { speedDelta: 0, pitchDelta: 0, intonationDelta: 0, speakerId: null }
+  }
+}
+
+/** Map emotion to a background preset id for auto-switching */
+export function emotionToBackgroundPresetId(emotion: string): string | null {
+  switch (emotion) {
+    case "angry":
+      return "atm-sunset" // 赤系の激しい夕焼け
+    case "happy":
+      return "atm-dawn-sky" // 明るい朝空
+    case "sad":
+      return "atm-twilight-stars" // 暗い星空
+    case "surprised":
+      return "atm-aurora" // 神秘的なオーロラ
+    case "disgust":
+      return "abs-ink-wash" // 暗いインク
+    case "fear":
+      return "abs-neon-void" // 暗いネオン
+    case "love":
+      return "atm-nebula" // 幻想的な星雲
+    default:
+      return null
   }
 }

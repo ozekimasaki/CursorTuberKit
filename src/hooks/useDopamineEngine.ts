@@ -59,6 +59,7 @@ export function useDopamineEngine(): DopamineEngine {
         shakeIntensity: lerp(current.shakeIntensity, target.shakeIntensity, t),
         frameGlowColor: t > 0.5 ? target.frameGlowColor : current.frameGlowColor,
         morphDurationMs: target.morphDurationMs,
+        backgroundPresetId: t > 0.5 ? target.backgroundPresetId : current.backgroundPresetId,
       }
     },
     [],

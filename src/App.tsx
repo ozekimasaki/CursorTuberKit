@@ -321,6 +321,14 @@ export function App() {
     document.body.classList.toggle("dock-open", dockOpen)
   }, [dockOpen])
 
+  // Auto-switch background preset on dopamine mutation
+  useEffect(() => {
+    const presetId = dopamine.state.visual.backgroundPresetId
+    if (presetId && stageBackgroundMedia?.kind !== "image" && stageBackgroundMedia?.kind !== "video") {
+      setStageBackground({ kind: "preset", id: presetId })
+    }
+  }, [dopamine.state.visual.backgroundPresetId])
+
   useEffect(() => {
     avatarModeRef.current = avatarMode
   }, [avatarMode])
