@@ -868,6 +868,7 @@ export function App() {
     let speechError: Error | null = null
     let firstAudioObserved = false
     let finalEmotion: Emotion | null = null
+    const promptVoice = dopamine.state.voice
     const requestStartedAt = performance.now()
     const audioQueue: Array<{ blob: Blob; emotion: Emotion; text: string }> = []
     let bridgeRequested = false
@@ -1017,7 +1018,7 @@ export function App() {
             return
           }
 
-          const wav = await synthesizeVoice(normalizedSegment, abortController.signal, dopamine.state.voice)
+          const wav = await synthesizeVoice(normalizedSegment, abortController.signal, promptVoice)
           audioQueue.push({ blob: wav, emotion, text: normalizedSegment })
           startPlaybackIfNeeded()
         })
@@ -1824,6 +1825,7 @@ export function App() {
       }
 
       void (async () => {
+        const replyVoice = dopamine.state.voice
         let fullResponseText = ""
         let pendingSpeechText = ""
         let action: AutomationAction | null = null
@@ -1852,7 +1854,7 @@ export function App() {
           synthesisTail = synthesisTail
             .then(async () => {
               if (abortController.signal.aborted) return
-              const wav = await synthesizeVoice(normalizedSegment, abortController.signal, dopamine.state.voice)
+              const wav = await synthesizeVoice(normalizedSegment, abortController.signal, replyVoice)
               audioSegments.push({ blob: wav, emotion: segmentEmotion, text: normalizedSegment })
             })
             .catch((error: unknown) => {
@@ -2136,6 +2138,7 @@ export function App() {
       return
     }
 
+    const replyPlaybackVoice = dopamine.state.voice
     let synthesisTail = Promise.resolve()
     let playbackPromise: Promise<void> | null = null
     let playbackActive = false
@@ -2285,7 +2288,7 @@ export function App() {
             return
           }
 
-          const wav = await synthesizeVoice(normalizedSegment, abortController.signal, dopamine.state.voice)
+          const wav = await synthesizeVoice(normalizedSegment, abortController.signal, replyPlaybackVoice)
           audioQueue.push({ blob: wav, emotion: segmentEmotion, text: normalizedSegment })
           startPlaybackIfNeeded()
         })

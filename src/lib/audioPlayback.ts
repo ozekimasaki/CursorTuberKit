@@ -32,8 +32,18 @@ export async function playAudioBlob(blob: Blob, options: PlayAudioOptions): Prom
       await (
         audioContext as unknown as { setSinkId(id: string): Promise<void> }
       ).setSinkId(options.outputDeviceId)
-    } catch {
-      // Fallback to default output if the requested sink is unavailable.
+    } catch (sinkError) {
+      console.warn("[AudioPlayback] AudioContext.setSinkId failed:", sinkError)
+    }
+  }
+
+  if (options.outputDeviceId && "setSinkId" in audio) {
+    try {
+      await (
+        audio as unknown as { setSinkId(id: string): Promise<void> }
+      ).setSinkId(options.outputDeviceId)
+    } catch (audioSinkError) {
+      console.warn("[AudioPlayback] Audio.setSinkId failed:", audioSinkError)
     }
   }
 
