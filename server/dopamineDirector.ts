@@ -1,10 +1,43 @@
-import { Agent } from "@cursor/sdk"
+import { Agent, type SDKAgent } from "@cursor/sdk"
 import type { DirectorDecision, MutationCue } from "../shared/dopamineMutation.js"
 import { collectCursorRun } from "./cursorSdkRun.js"
 import { createCursorLocalOptions } from "./cursorLocalOptions.js"
 import { disposeAgentSafely, extractJsonObjectSafe, withTimeout } from "./cursorAgentUtils.js"
 
-const DOPAMINE_DIRECTOR_TIMEOUT_MS = 12000
+const DOPAMINE_DIRECTOR_TIMEOUT_MS = 8000
+
+/** Shared agent reused across comment analyses to avoid per-create overhead */
+let directorAgent: SDKAgent | null = null
+
+async function getOrCreateDirectorAgent(): Promise<SDKAgent> {
+  if (!directorAgent) {
+    const apiKey = process.env.CURSOR_API_KEY?.trim()
+    if (!apiKey) {
+      throw new Error("CURSOR_API_KEY not set")
+    }
+    directorAgent = await Agent.create({
+      apiKey,
+      model: { id: "composer-2.5", params: [{ id: "thinking", value: "low" }] },
+      local: createCursorLocalOptions(),
+      name: "Dopamine Director",
+    })
+  }
+  return directorAgent
+}
+
+function isAgentUnrecoverable(error: unknown): boolean {
+  if (error instanceof Error) {
+    const msg = error.message.toLowerCase()
+    return (
+      msg.includes("agent_busy") ||
+      msg.includes("409") ||
+      msg.includes("connection") ||
+      msg.includes("econnrefused") ||
+      msg.includes("socket hang up")
+    )
+  }
+  return false
+}
 
 export async function decideMutation(
   commentText: string,
@@ -46,15 +79,8 @@ ${context || "(なし)"}
 - 常に配信者が「気づくレベル以上」の激しさを目指す
 - visualMultiplierは基準値に掛ける倍率（1.5=50%増し）`
 
-  let agent: Awaited<ReturnType<typeof Agent.create>> | null = null
-
   try {
-    agent = await Agent.create({
-      apiKey,
-      model: { id: "composer-2.5", params: [{ id: "thinking", value: "low" }] },
-      local: createCursorLocalOptions(),
-      name: "Dopamine Director",
-    })
+    const agent = await getOrCreateDirectorAgent()
     const run = await agent.send(prompt)
     const result = await withTimeout(
       collectCursorRun(run),
@@ -70,6 +96,10 @@ ${context || "(なし)"}
     return parsed
   } catch (err) {
     console.error(`[DopamineDirector] AI director failed: ${err instanceof Error ? err.message : String(err)}`)
+    if (isAgentUnrecoverable(err)) {
+      directorAgent?.close()
+      directorAgent = null
+    }
     // Return fallback
     return {
       emotionTag: currentEmotion || "neutral",
@@ -79,10 +109,6 @@ ${context || "(なし)"}
       visualMultiplier: 1.2,
       voiceMultiplier: 1.0,
       shouldMutant: false,
-    }
-  } finally {
-    if (agent) {
-      await disposeAgentSafely(agent)
     }
   }
 }

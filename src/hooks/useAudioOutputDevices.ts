@@ -22,24 +22,37 @@ export function useAudioOutputDevices() {
 
     async function refresh() {
       try {
-        // Prompt permission so labels are populated
-        await navigator.mediaDevices.getUserMedia({ audio: true })
-        const all = await navigator.mediaDevices.enumerateDevices()
-        const outputs = all
-          .filter((d) => d.kind === "audiooutput")
-          .map((d) => ({
-            deviceId: d.deviceId,
-            label: d.label || `出力 ${d.deviceId.slice(0, 8)}...`,
-          }))
-        if (!cancelled) setDevices(outputs)
+        // Labels are hidden until the user grants audio permission once.
+        // Try enumerate first; if labels are missing we prompt for permission.
+        let all = await navigator.mediaDevices.enumerateDevices()
+        let outputs = all.filter((d) => d.kind === "audiooutput")
+
+        if (outputs.length > 0 && outputs.every((d) => !d.label)) {
+          await navigator.mediaDevices.getUserMedia({ audio: true })
+          all = await navigator.mediaDevices.enumerateDevices()
+          outputs = all.filter((d) => d.kind === "audiooutput")
+        }
+
+        const mapped = outputs.map((d) => ({
+          deviceId: d.deviceId,
+          label: d.label || `出力 ${d.deviceId.slice(0, 8)}...`,
+        }))
+        if (!cancelled) setDevices(mapped)
       } catch {
         if (!cancelled) setDevices([])
       }
     }
 
     refresh()
+
+    const handleChange = () => {
+      refresh()
+    }
+    navigator.mediaDevices.addEventListener("devicechange", handleChange)
+
     return () => {
       cancelled = true
+      navigator.mediaDevices.removeEventListener("devicechange", handleChange)
     }
   }, [])
 

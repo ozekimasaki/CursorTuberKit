@@ -36,7 +36,7 @@ import { useAudioOutputDevices } from "./hooks/useAudioOutputDevices"
 import { useVoicevoxHealthProbe } from "./hooks/useVoicevoxHealthProbe"
 import { type AvatarState } from "./components/MaidCatAvatar"
 import { type MotionPngAvatarHandle } from "./components/MotionPngAvatar"
-import { playAudioBlob } from "./lib/audioPlayback"
+import { SpeechPipeline } from "./lib/speechPipeline"
 import {
   defaultMotionPngAssetStatus,
   defaultMotionPngSettings,
@@ -75,8 +75,6 @@ import { requestLiveMutation, requestHeavyMutation } from "./lib/liveSelfRewrite
 import {
   AUTO_REPLY_BRIDGE_DELAY_MS,
   AUTO_REPLY_BRIDGE_TEXT,
-  COMPACT_REPLY_BATCH_SIZE,
-  COMPACT_REPLY_TRIGGER_COUNT,
   MAX_AUTO_REPLY_RETRY_ATTEMPTS,
   MAX_CONCURRENT_AUTO_REPLY_GENERATIONS,
   MAX_QUEUED_VIEWER_EVENTS,
@@ -92,7 +90,7 @@ import {
   type StreamRuntimeProgress,
   type StreamStatus,
 } from "./lib/runtimeProgress"
-import { extractSpeechSegments, trimRecentTurns, waitForQueuedPlaybackGap } from "./lib/speechSegments"
+import { extractSpeechSegments, trimRecentTurns } from "./lib/speechSegments"
 import {
   assessViewerEventTriage,
   insertQueuedViewerEvent,
@@ -100,9 +98,6 @@ import {
 } from "./lib/viewerEventTriage"
 import {
   buildAutoReplyPrompt,
-  buildCompactAutoReplyPrompt,
-  shouldUseShortAutoReplyMode,
-  takeCompactViewerReplyBatch,
 } from "./lib/autoReplyPrompt"
 import { selectAutomaticContentSuggestion } from "./lib/autopilotSelection"
 import { formatRelativeTimestamp, isAbortError, readSseData } from "./lib/sseHelpers"
@@ -245,6 +240,7 @@ export function App() {
   const autoReplySeenEventIdsRef = useRef<Set<string>>(new Set())
   const autoReplySeenScopeRef = useRef<string | null>(null)
   const bridgeSpeechCacheRef = useRef<Map<string, Blob>>(new Map())
+  const deferredEmotionRef = useRef<Emotion | null>(null)
   const { clearError, dismissError, showError, visibleError } = useErrorToast()
   const {
     handleStageBackgroundChange,
@@ -354,19 +350,8 @@ export function App() {
     return () => abortController.abort()
   }, [])
 
-  // Heavy mutation auto-trigger every 2 minutes
-  useEffect(() => {
-    const interval = setInterval(() => {
-      console.log("[AutoTrigger] Checking heavy mutation readiness...")
-      if (dopamine.isHeavyMutationReady() && Math.random() < 0.5) {
-        console.log("[AutoTrigger] Auto-triggering HEAVY mutation!")
-        void triggerHeavyPersonaMutation()
-      } else {
-        console.log(`[AutoTrigger] Heavy mutation skipped (ready=${dopamine.isHeavyMutationReady()})`)
-      }
-    }, 2 * 60 * 1000)
-    return () => clearInterval(interval)
-  }, [])
+  // Heavy mutation is now manual-only to avoid stacking with comment replies.
+  // Previous auto-trigger every 2 minutes has been removed.
 
   function handleStreamScreenModeChange(enabled: boolean) {
     setStreamScreenMode(enabled)
@@ -375,6 +360,24 @@ export function App() {
       setDockOpen(false)
     }
   }
+
+  function setEmotionSafe(nextEmotion: Emotion) {
+    if (dopamine.state.phase === "morphing" || dopamine.state.phase === "triggered") {
+      deferredEmotionRef.current = nextEmotion
+      return
+    }
+    setEmotion(nextEmotion)
+  }
+
+  useEffect(() => {
+    if (
+      (dopamine.state.phase === "morphed" || dopamine.state.phase === "idle") &&
+      deferredEmotionRef.current
+    ) {
+      setEmotion(deferredEmotionRef.current)
+      deferredEmotionRef.current = null
+    }
+  }, [dopamine.state.phase])
 
   function resetAvatarMouth() {
     setViseme("closed")
@@ -516,11 +519,17 @@ export function App() {
   }
 
   async function triggerHeavyPersonaMutation(cueText?: string) {
+    if (livePersonaMutationBusyRef.current) {
+      console.log("[HeavyMutation] SKIPPED - mutation already running")
+      return
+    }
+
     if (!dopamine.isHeavyMutationReady()) {
       console.log("[HeavyMutation] SKIPPED - cooldown not ready")
       return
     }
     console.log(`[HeavyMutation] TRIGGERED by: "${cueText?.substring(0, 40) || "autopilot"}"`)
+    livePersonaMutationBusyRef.current = true
     dopamine.setLiveMutationBusy(true)
     try {
       const result = await requestHeavyMutation({ cueText })
@@ -555,6 +564,7 @@ export function App() {
     } catch (error) {
       console.warn("[HeavyMutation] FAILED:", error)
     } finally {
+      livePersonaMutationBusyRef.current = false
       dopamine.setLiveMutationBusy(false)
     }
   }
@@ -746,59 +756,74 @@ export function App() {
   }, [])
 
   useEffect(() => {
-    const eventSource = new EventSource("/api/platform-chat/stream")
+    let eventSource: EventSource | null = null
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+    let reconnectAttempts = 0
+    const MAX_RECONNECT_DELAY_MS = 30_000
 
-    const handleState = (event: Event) => {
-      const nextState = readSseData<PlatformChatState>(event)
+    const connect = () => {
+      if (eventSource) {
+        eventSource.close()
+      }
 
-      if (nextState) {
-        setPlatformState(nextState)
+      eventSource = new EventSource("/api/platform-chat/stream")
+      reconnectAttempts = 0
 
-        if (nextState.mode) {
-          setPlatformMode(nextState.mode)
-        }
+      const handleState = (event: Event) => {
+        const nextState = readSseData<PlatformChatState>(event)
 
-        if (nextState.target) {
-          setPlatformTarget(nextState.target)
-        }
+        if (nextState) {
+          setPlatformState(nextState)
 
-        if (nextState.status === "idle") {
-          clearQueuedViewerReplies()
+          if (nextState.mode) {
+            setPlatformMode(nextState.mode)
+          }
+
+          if (nextState.target) {
+            setPlatformTarget(nextState.target)
+          }
+
+          if (nextState.status === "idle") {
+            clearQueuedViewerReplies()
+          }
         }
       }
+
+      const handleViewerEvent = (event: Event) => {
+        const viewerEvent = readSseData<PlatformViewerEvent>(event)
+
+        if (!viewerEvent) {
+          return
+        }
+
+        setLiveViewerEvents((current) => insertViewerEvent(current, viewerEvent))
+        void dopamine.triggerCueFromComment(viewerEvent)
+
+        if (autoReplyEnabledRef.current) {
+          enqueueAutoReplyEvent(viewerEvent)
+        }
+      }
+
+      const handleError = () => {
+        eventSource?.close()
+        eventSource = null
+        const delay = Math.min(1_000 * 2 ** reconnectAttempts, MAX_RECONNECT_DELAY_MS)
+        reconnectAttempts += 1
+        reconnectTimer = setTimeout(connect, delay)
+      }
+
+      eventSource.addEventListener("state", handleState as EventListener)
+      eventSource.addEventListener("viewer-event", handleViewerEvent as EventListener)
+      eventSource.addEventListener("error", handleError as EventListener)
     }
 
-    const handleViewerEvent = (event: Event) => {
-      const viewerEvent = readSseData<PlatformViewerEvent>(event)
-
-      if (!viewerEvent) {
-        return
-      }
-
-      setLiveViewerEvents((current) => insertViewerEvent(current, viewerEvent))
-      void dopamine.triggerCueFromComment(viewerEvent)
-
-      // Random live persona mutation trigger (20% chance when cooldown ready)
-      if (
-        viewerEvent.kind === "comment" &&
-        dopamine.isHeavyMutationReady() &&
-        Math.random() < 0.2
-      ) {
-        void triggerLivePersonaMutation(viewerEvent.text, viewerEvent.receivedAt)
-      }
-
-      if (autoReplyEnabledRef.current) {
-        enqueueAutoReplyEvent(viewerEvent)
-      }
-    }
-
-    eventSource.addEventListener("state", handleState as EventListener)
-    eventSource.addEventListener("viewer-event", handleViewerEvent as EventListener)
+    connect()
 
     return () => {
-      eventSource.removeEventListener("state", handleState as EventListener)
-      eventSource.removeEventListener("viewer-event", handleViewerEvent as EventListener)
-      eventSource.close()
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer)
+      }
+      eventSource?.close()
     }
   }, [])
 
@@ -819,7 +844,7 @@ export function App() {
 
     if (!trimmedPrompt) {
       showError("プロンプトを入力してください。")
-      setEmotion("neutral")
+      setEmotionSafe("neutral")
       setStatus("error")
       setAvatarState("error")
       resetAvatarMouth()
@@ -841,7 +866,7 @@ export function App() {
     setResponseText("")
     setCaptionText("")
     clearError()
-    setEmotion("neutral")
+    setEmotionSafe("neutral")
     setStatus("thinking")
     setAvatarState("thinking")
     resetAvatarMouth()
@@ -860,187 +885,80 @@ export function App() {
     )
     let fullResponseText = ""
     let pendingSpeechText = ""
-    let synthesisTail = Promise.resolve()
-    let playbackPromise: Promise<void> | null = null
-    let playbackActive = false
     let textStreamCompleted = false
-    let pendingSynthesisCount = 0
-    let speechError: Error | null = null
-    let firstAudioObserved = false
     let finalEmotion: Emotion | null = null
     const promptVoice = dopamine.state.voice
     const requestStartedAt = performance.now()
-    const audioQueue: Array<{ blob: Blob; emotion: Emotion; text: string }> = []
     let bridgeRequested = false
 
-    const canUpdateSpeechState = () => !speechError && !abortController.signal.aborted
-
-    const handleSpeechError = (error: unknown) => {
-      if (abortController.signal.aborted) {
-        return
-      }
-
-      speechError = error instanceof Error ? error : new Error("VOICEVOX音声の処理に失敗しました。")
-      const speechErrorMessage = speechError.message
-      audioQueue.length = 0
-      showError(speechErrorMessage)
-      setEmotion("neutral")
-      setStatus("error")
-      setAvatarState("error")
-      resetAvatarMouth()
-      setRuntimeProgress((current) =>
-        appendRuntimeActivity(current, {
-          detail: speechErrorMessage,
-          kind: "voice",
-          label: "VOICEVOX でエラーが発生しました",
-          status: "error",
-        }),
-      )
-      abortController.abort()
-    }
-
-    const finalizeIfDone = () => {
-      if (abortController.signal.aborted) {
-        return
-      }
-
-      if (playbackActive || pendingSynthesisCount > 0 || !textStreamCompleted) {
-        return
-      }
-
-      if (speechError) {
-        setStatus("error")
-        setAvatarState("error")
-        resetAvatarMouth()
-        return
-      }
-
-      setCaptionText(fullResponseText.trim())
-      setStatus("ready")
-      setEmotion(finalEmotion ?? "neutral")
-      setAvatarState("idle")
-      resetAvatarMouth()
-      setRuntimeProgress((current) => finalizeRuntimeProgress(current))
-    }
-
-    const startPlaybackIfNeeded = () => {
-      if (playbackActive || audioQueue.length === 0 || abortController.signal.aborted) {
-        return
-      }
-
-      playbackActive = true
-      playbackPromise = (async () => {
-        let hasPlayedSegment = false
-
-        try {
-          while (audioQueue.length > 0 && !abortController.signal.aborted) {
-            const next = audioQueue.shift()
-
-            if (!next) {
-              continue
-            }
-
-            if (hasPlayedSegment) {
-              await waitForQueuedPlaybackGap(abortController.signal)
-            }
-
-            await playAudioBlob(next.blob, {
-              onAnalysis: handleMotionPngAnalysis,
-              outputDeviceId: audioOutputDeviceId ?? undefined,
-              text: next.text,
-              signal: abortController.signal,
-              onStart: () => {
-                if (canUpdateSpeechState()) {
-                  if (!firstAudioObserved) {
-                    firstAudioObserved = true
-                    const latencyMs = Math.round(performance.now() - requestStartedAt)
-                    setRuntimeProgress((current) =>
-                      appendRuntimeActivity(current, {
-                        detail: `${latencyMs}ms で話し始めました。`,
-                        kind: "latency",
-                        label: "初動レイテンシ",
-                        status: "done",
-                      }),
-                    )
-                  }
-                  setCaptionText(next.text)
-                  setEmotion(next.emotion)
-                  setStatus("playing")
-                  setAvatarState("speaking")
-                }
-              },
-              onViseme: setViseme,
-              onEnded: () => {
-                if (canUpdateSpeechState()) {
-                  resetAvatarMouth()
-                }
-              },
-              onError: handleSpeechError,
-            })
-            hasPlayedSegment = true
+    const pipeline = new SpeechPipeline({
+      abortSignal: abortController.signal,
+      voice: promptVoice,
+      startedAt: requestStartedAt,
+      callbacks: {
+        onAnalysis: handleMotionPngAnalysis,
+        outputDeviceId: audioOutputDeviceId ?? undefined,
+        onStart: (segment, meta) => {
+          if (abortController.signal.aborted) return
+          if (meta.firstAudio) {
+            const latencyMs = Math.round(performance.now() - meta.startedAt)
+            setRuntimeProgress((current) =>
+              appendRuntimeActivity(current, {
+                detail: `${latencyMs}ms で話し始めました。`,
+                kind: "latency",
+                label: "初動レイテンシ",
+                status: "done",
+              }),
+            )
           }
-        } catch (error) {
-          handleSpeechError(error)
-        }
-
-        playbackActive = false
-
-        if (!abortController.signal.aborted && !speechError) {
-          if (pendingSynthesisCount > 0) {
-            setEmotion("neutral")
-            setStatus("synthesizing")
-            setAvatarState("thinking")
-          } else {
-            finalizeIfDone()
+          setCaptionText(segment.text)
+          setEmotionSafe(segment.emotion)
+          setStatus("playing")
+          setAvatarState("speaking")
+        },
+        onViseme: setViseme,
+        onEnded: () => {
+          if (!abortController.signal.aborted) {
+            resetAvatarMouth()
           }
-        }
-      })()
-    }
-
-    const enqueueSpeechSegment = (segment: string) => {
-      const normalizedSegment = segment.trim()
-
-      if (!voiceEnabled || !normalizedSegment) {
-        return
-      }
-
-      const emotion = inferEmotionFromText(normalizedSegment)
-      pendingSynthesisCount += 1
-
-      if (canUpdateSpeechState() && !playbackActive) {
-        setStatus("synthesizing")
-        setAvatarState("thinking")
-      }
-
-      synthesisTail = synthesisTail
-        .then(async () => {
-          if (abortController.signal.aborted) {
-            return
-          }
-
-          const wav = await synthesizeVoice(normalizedSegment, abortController.signal, promptVoice)
-          audioQueue.push({ blob: wav, emotion, text: normalizedSegment })
-          startPlaybackIfNeeded()
-        })
-        .catch((error: unknown) => {
-          handleSpeechError(error)
-        })
-        .finally(() => {
-          pendingSynthesisCount -= 1
-
-          if (
-            !abortController.signal.aborted &&
-            !speechError &&
-            !playbackActive &&
-            pendingSynthesisCount > 0
-          ) {
+        },
+        onError: (error) => {
+          if (abortController.signal.aborted) return
+          const speechErrorMessage = error.message
+          showError(speechErrorMessage)
+          setEmotionSafe("neutral")
+          setStatus("error")
+          setAvatarState("error")
+          resetAvatarMouth()
+          setRuntimeProgress((current) =>
+            appendRuntimeActivity(current, {
+              detail: speechErrorMessage,
+              kind: "voice",
+              label: "VOICEVOX でエラーが発生しました",
+              status: "error",
+            }),
+          )
+          abortController.abort()
+        },
+        onSynthesizing: () => {
+          if (!abortController.signal.aborted) {
+            setEmotionSafe("neutral")
             setStatus("synthesizing")
             setAvatarState("thinking")
           }
-
-          finalizeIfDone()
-        })
-    }
+        },
+        onPlaybackDone: () => {
+          if (abortController.signal.aborted) return
+          if (!textStreamCompleted) return
+          setCaptionText(fullResponseText.trim())
+          setStatus("ready")
+          setEmotionSafe(finalEmotion ?? "neutral")
+          setAvatarState("idle")
+          resetAvatarMouth()
+          setRuntimeProgress((current) => finalizeRuntimeProgress(current))
+        },
+      },
+    })
 
     const bridgeTimerId =
       voiceEnabled && options.bridgeSpeech
@@ -1049,8 +967,8 @@ export function App() {
 
             if (
               abortController.signal.aborted ||
-              speechError ||
-              firstAudioObserved ||
+              pipeline.hasError ||
+              pipeline.hasPlayedAudio ||
               textStreamCompleted ||
               bridgeRequested ||
               !bridgeSpeech
@@ -1061,16 +979,11 @@ export function App() {
             bridgeRequested = true
             void getCachedBridgeSpeech(bridgeSpeech, abortController.signal)
               .then((wav) => {
-                if (abortController.signal.aborted || speechError || firstAudioObserved) {
+                if (abortController.signal.aborted || pipeline.hasError || pipeline.hasPlayedAudio) {
                   return
                 }
 
-                audioQueue.unshift({
-                  blob: wav,
-                  emotion: "neutral",
-                  text: bridgeSpeech,
-                })
-                startPlaybackIfNeeded()
+                pipeline.enqueuePreSynthesized([{ blob: wav, emotion: "neutral", text: bridgeSpeech }])
               })
               .catch(() => {
                 // bridge fallback is best-effort only
@@ -1108,19 +1021,19 @@ export function App() {
         if (event.type === "state") {
           setRuntimeProgress((current) => applyRuntimeStateEvent(current, event.state))
 
-          if (event.state === "thinking" && canUpdateSpeechState() && !playbackActive) {
+          if (event.state === "thinking" && !abortController.signal.aborted && !pipeline.hasPendingWork) {
             setStatus("thinking")
             setAvatarState("thinking")
           }
 
-          if (event.state === "speaking" && canUpdateSpeechState() && !playbackActive) {
+          if (event.state === "speaking" && !abortController.signal.aborted && !pipeline.hasPendingWork) {
             setStatus("thinking")
             setAvatarState("thinking")
           }
 
           if (event.state === "done") {
             textStreamCompleted = true
-            if (canUpdateSpeechState() && !playbackActive) {
+            if (!abortController.signal.aborted && !pipeline.hasPendingWork) {
               setStatus(voiceEnabled ? "synthesizing" : "ready")
               setAvatarState(voiceEnabled ? "thinking" : "idle")
             }
@@ -1130,17 +1043,17 @@ export function App() {
         if (event.type === "text") {
           fullResponseText += event.text
           pendingSpeechText += event.text
-          if (canUpdateSpeechState() && !playbackActive) {
+          if (!abortController.signal.aborted && !pipeline.hasPendingWork) {
             setStatus("thinking")
             setAvatarState("thinking")
           }
           setResponseText((current) => current + event.text)
           setCaptionText((current) => current + event.text)
 
-          if (canUpdateSpeechState()) {
+          if (!abortController.signal.aborted) {
             const { remainder, segments } = extractSpeechSegments(pendingSpeechText)
             pendingSpeechText = remainder
-            segments.forEach(enqueueSpeechSegment)
+            segments.forEach((segment) => pipeline.enqueueText(segment))
           }
         }
 
@@ -1170,22 +1083,16 @@ export function App() {
         options.onCompletedText?.(completedAssistantText)
       }
 
-      if (voiceEnabled && fullResponseText.trim() && canUpdateSpeechState()) {
+      if (voiceEnabled && fullResponseText.trim() && !abortController.signal.aborted) {
         const { segments } = extractSpeechSegments(pendingSpeechText, { force: true })
-        segments.forEach(enqueueSpeechSegment)
-        await synthesisTail
-
-        if (playbackPromise) {
-          await playbackPromise
-        }
-
-        finalizeIfDone()
+        segments.forEach((segment) => pipeline.enqueueText(segment))
+        await pipeline.awaitCompletion()
         return { aborted: false, errorMessage: null }
       }
 
-      if (canUpdateSpeechState()) {
+      if (!abortController.signal.aborted) {
         setCaptionText(completedAssistantText)
-        setEmotion(finalEmotion ?? "neutral")
+        setEmotionSafe(finalEmotion ?? "neutral")
         setStatus("ready")
         setAvatarState("idle")
         resetAvatarMouth()
@@ -1195,8 +1102,8 @@ export function App() {
       return { aborted: false, errorMessage: null }
     } catch (error) {
       if (abortController.signal.aborted) {
-        if (!speechError) {
-          setEmotion("neutral")
+        if (!pipeline.hasError) {
+          setEmotionSafe("neutral")
           setStatus("ready")
           setAvatarState("idle")
           resetAvatarMouth()
@@ -1207,7 +1114,7 @@ export function App() {
 
       const message = error instanceof Error ? error.message : "AI応答の取得に失敗しました。"
       showError(message)
-      setEmotion("neutral")
+      setEmotionSafe("neutral")
       setStatus("error")
       setAvatarState("error")
       resetAvatarMouth()
@@ -1251,6 +1158,7 @@ export function App() {
   function shouldStartDirectAutoReply() {
     return (
       !abortRef.current &&
+      !preparedAutoReplyPlaybackBusyRef.current &&
       autoReplyGenerationCountRef.current === 0 &&
       preparedAutoReplyQueueRef.current.length === 0 &&
       autoReplyEventQueueRef.current.length === 0
@@ -1352,7 +1260,7 @@ export function App() {
   function handleCancel() {
     abortRef.current?.abort()
     abortRef.current = null
-    setEmotion("neutral")
+    setEmotionSafe("neutral")
     setStatus("ready")
     setAvatarState("idle")
     resetAvatarMouth()
@@ -1778,51 +1686,27 @@ export function App() {
       autoReplyGenerationCountRef.current < MAX_CONCURRENT_AUTO_REPLY_GENERATIONS
     ) {
       const queuedEvents = autoReplyEventQueueRef.current
-      const compactBatch = takeCompactViewerReplyBatch(queuedEvents)
-      const selectedEvents = compactBatch
-        ? compactBatch
-        : queuedEvents[0]
-          ? [queuedEvents[0]]
-          : []
+      const primaryEvent = queuedEvents[0]
 
-      if (selectedEvents.length === 0) {
+      if (!primaryEvent) {
         return
       }
 
-      const selectedEventIds = new Set(selectedEvents.map((event) => event.id))
-      autoReplyEventQueueRef.current = compactBatch
-        ? queuedEvents.filter((event) => !selectedEventIds.has(event.id))
-        : queuedEvents.slice(1)
-
+      autoReplyEventQueueRef.current = queuedEvents.slice(1)
       autoReplyGenerationCountRef.current += 1
-      const primaryEvent = selectedEvents[0]!
-      const shortReplyMode = compactBatch !== null || shouldUseShortAutoReplyMode(autoReplyEventQueueRef.current.length)
-      const prompt = compactBatch
-        ? buildCompactAutoReplyPrompt(selectedEvents, currentCharacterName)
-        : buildAutoReplyPrompt(primaryEvent, currentCharacterName, { shortReply: shortReplyMode })
+      const prompt = buildAutoReplyPrompt(primaryEvent, currentCharacterName)
       const automationRequest: ChatAutomationRequest = {
-        replyStyle: compactBatch ? "compact" : shortReplyMode ? "short" : "default",
+        replyStyle: "default",
         source: "platform_auto_reply",
         target: {
           platform: primaryEvent.platform,
           target: primaryEvent.target,
         },
       }
-      const retryKey = buildAutoReplyRetryKey(selectedEvents)
+      const retryKey = buildAutoReplyRetryKey([primaryEvent])
       const abortController = new AbortController()
       const preparedSequence = preparedAutoReplySequenceRef.current++
       autoReplyGenerationAbortControllersRef.current.add(abortController)
-
-      if (compactBatch) {
-        setRuntimeProgress((current) =>
-          appendRuntimeActivity(current, {
-            detail: `${selectedEvents.length}件のコメント候補から、AI に今いちばん拾う返答を選ばせます。`,
-            kind: "autoreply",
-            label: "コメント候補を AI 採択中",
-            status: "running",
-          }),
-        )
-      }
 
       void (async () => {
         const replyVoice = dopamine.state.voice
@@ -1941,11 +1825,12 @@ export function App() {
             audioSegments: audioSegments.length > 0 ? audioSegments : undefined,
             finalEmotion,
             id: retryKey,
-            isMonetized: selectedEvents.some((event) => event.isMonetized),
+            isMonetized: primaryEvent.isMonetized,
             moderation,
             responseText: normalizedResponse,
             sequence: preparedSequence,
             source: "viewer",
+            voiceSnapshot: replyVoice ? { ...replyVoice } : undefined,
           }
 
           if (shouldAutoPlayPreparedReply(preparedReply)) {
@@ -1955,7 +1840,7 @@ export function App() {
         } catch (error) {
           if (!abortController.signal.aborted && !isAbortError(error)) {
             scheduleAutoReplyRetry(
-              selectedEvents,
+              [primaryEvent],
               error instanceof Error ? error.message : "コメント返答の生成に失敗しました。",
             )
           }
@@ -2019,7 +1904,7 @@ export function App() {
     setResponseText(normalizedResponse)
     setCaptionText(normalizedResponse)
     clearError()
-    setEmotion("neutral")
+    setEmotionSafe("neutral")
     setStatus(voiceEnabled ? "synthesizing" : "ready")
     setAvatarState(voiceEnabled ? "thinking" : "idle")
     resetAvatarMouth()
@@ -2034,7 +1919,7 @@ export function App() {
 
     if (!voiceEnabled) {
       setCaptionText(normalizedResponse)
-      setEmotion(reply.finalEmotion ?? "neutral")
+      setEmotionSafe(reply.finalEmotion ?? "neutral")
       setRuntimeProgress((current) => finalizeRuntimeProgress(current))
 
       if (abortRef.current === abortController) {
@@ -2049,279 +1934,158 @@ export function App() {
 
     // 音声合成済みセグメントがあれば即座に再生（ストリーミング先回り）
     if (reply.audioSegments && reply.audioSegments.length > 0) {
-      let hasPlayedSegment = false
-      let firstAudioObserved = false
+      const prebuiltPipeline = new SpeechPipeline({
+        abortSignal: abortController.signal,
+        voice: reply.voiceSnapshot ?? dopamine.state.voice,
+        startedAt: replyStartedAt,
+        callbacks: {
+          onAnalysis: handleMotionPngAnalysis,
+          outputDeviceId: audioOutputDeviceId ?? undefined,
+          onStart: (segment, meta) => {
+            if (abortController.signal.aborted) return
+            if (meta.firstAudio) {
+              const latencyMs = Math.round(performance.now() - meta.startedAt)
+              setRuntimeProgress((current) =>
+                appendRuntimeActivity(current, {
+                  detail: `${latencyMs}ms で再生を開始しました。`,
+                  kind: "latency",
+                  label: "返答初動を計測しました",
+                  status: "done",
+                }),
+              )
+            }
+          setCaptionText(segment.text)
+          setEmotionSafe(segment.emotion)
+          setStatus("playing")
+          setAvatarState("speaking")
+        },
+        onViseme: setViseme,
+        onEnded: () => {
+          if (!abortController.signal.aborted) {
+            resetAvatarMouth()
+          }
+        },
+        onError: (error) => {
+          if (abortController.signal.aborted) return
+          const speechErrorMessage = error.message
+          showError(speechErrorMessage)
+          setEmotionSafe("neutral")
+          setStatus("error")
+          setAvatarState("error")
+            resetAvatarMouth()
+            setRuntimeProgress((current) =>
+              appendRuntimeActivity(current, {
+                detail: speechErrorMessage,
+                kind: "voice",
+                label: "自動返答の読み上げに失敗しました",
+                status: "error",
+              }),
+            )
+            abortController.abort()
+          },
+          onPlaybackDone: () => {
+            if (abortController.signal.aborted) return
+            setCaptionText(normalizedResponse)
+            setStatus("ready")
+            setEmotionSafe(reply.finalEmotion ?? "neutral")
+            setAvatarState("idle")
+            resetAvatarMouth()
+            setRuntimeProgress((current) => finalizeRuntimeProgress(current))
+          },
+        },
+      })
 
       try {
-        for (const next of reply.audioSegments) {
-          if (abortController.signal.aborted) {
-            break
-          }
-
-          if (hasPlayedSegment) {
-            await waitForQueuedPlaybackGap(abortController.signal)
-          }
-
-          await playAudioBlob(next.blob, {
-            onAnalysis: handleMotionPngAnalysis,
-            outputDeviceId: audioOutputDeviceId ?? undefined,
-            text: next.text,
-            signal: abortController.signal,
-            onStart: () => {
-              if (!abortController.signal.aborted) {
-                if (!firstAudioObserved) {
-                  firstAudioObserved = true
-                  const latencyMs = Math.round(performance.now() - replyStartedAt)
-                  setRuntimeProgress((current) =>
-                    appendRuntimeActivity(current, {
-                      detail: `${latencyMs}ms で再生を開始しました。`,
-                      kind: "latency",
-                      label: "返答初動を計測しました",
-                      status: "done",
-                    }),
-                  )
-                }
-                setCaptionText(next.text)
-                setEmotion(next.emotion)
-                setStatus("playing")
-                setAvatarState("speaking")
-              }
-            },
-            onViseme: setViseme,
-            onEnded: () => {
-              if (!abortController.signal.aborted) {
-                resetAvatarMouth()
-              }
-            },
-            onError: (error: unknown) => {
-              if (!abortController.signal.aborted) {
-                const speechErrorMessage = error instanceof Error ? error.message : "VOICEVOX音声の処理に失敗しました。"
-                showError(speechErrorMessage)
-                setEmotion("neutral")
-                setStatus("error")
-                setAvatarState("error")
-                resetAvatarMouth()
-                setRuntimeProgress((current) =>
-                  appendRuntimeActivity(current, {
-                    detail: speechErrorMessage,
-                    kind: "voice",
-                    label: "自動返答の読み上げに失敗しました",
-                    status: "error",
-                  }),
-                )
-                abortController.abort()
-              }
-            },
-          })
-          hasPlayedSegment = true
-        }
+        prebuiltPipeline.enqueuePreSynthesized(reply.audioSegments)
+        await prebuiltPipeline.awaitCompletion()
       } catch {
-        // ignored: abort or playback error handled by onError
-      }
+        // ignored: handled by onError
+      } finally {
+        if (abortRef.current === abortController) {
+          abortRef.current = null
+        }
 
-      if (!abortController.signal.aborted) {
-        setCaptionText(normalizedResponse)
-        setStatus("ready")
-        setEmotion(reply.finalEmotion ?? "neutral")
-        setAvatarState("idle")
-        resetAvatarMouth()
-        setRuntimeProgress((current) => finalizeRuntimeProgress(current))
-      }
-
-      if (abortRef.current === abortController) {
-        abortRef.current = null
-      }
-
-      if (autoReplyEnabledRef.current) {
-        void pumpPreparedAutoReplyQueue()
+        if (autoReplyEnabledRef.current) {
+          void pumpPreparedAutoReplyQueue()
+        }
       }
       return
     }
 
-    const replyPlaybackVoice = dopamine.state.voice
-    let synthesisTail = Promise.resolve()
-    let playbackPromise: Promise<void> | null = null
-    let playbackActive = false
-    let pendingSynthesisCount = 0
-    let speechError: Error | null = null
-    let firstAudioObserved = false
-    const audioQueue: Array<{ blob: Blob; emotion: Emotion; text: string }> = []
+    const replyPlaybackVoice = reply.voiceSnapshot ?? dopamine.state.voice
 
-    const canUpdateSpeechState = () => !speechError && !abortController.signal.aborted
-
-    const handleSpeechError = (error: unknown) => {
-      if (abortController.signal.aborted) {
-        return
-      }
-
-      speechError = error instanceof Error ? error : new Error("VOICEVOX音声の処理に失敗しました。")
-      const speechErrorMessage = speechError.message
-      audioQueue.length = 0
-      showError(speechErrorMessage)
-      setEmotion("neutral")
-      setStatus("error")
-      setAvatarState("error")
-      resetAvatarMouth()
-      setRuntimeProgress((current) =>
-        appendRuntimeActivity(current, {
-          detail: speechErrorMessage,
-          kind: "voice",
-          label: "自動返答の読み上げに失敗しました",
-          status: "error",
-        }),
-      )
-      abortController.abort()
-    }
-
-    const finalizeIfDone = () => {
-      if (abortController.signal.aborted || playbackActive || pendingSynthesisCount > 0) {
-        return
-      }
-
-      if (speechError) {
-        setStatus("error")
-        setAvatarState("error")
-        resetAvatarMouth()
-        return
-      }
-
-      setCaptionText(normalizedResponse)
-      setStatus("ready")
-      setEmotion(reply.finalEmotion ?? "neutral")
-      setAvatarState("idle")
-      resetAvatarMouth()
-      setRuntimeProgress((current) => finalizeRuntimeProgress(current))
-    }
-
-    const startPlaybackIfNeeded = () => {
-      if (playbackActive || audioQueue.length === 0 || abortController.signal.aborted) {
-        return
-      }
-
-      playbackActive = true
-      playbackPromise = (async () => {
-        let hasPlayedSegment = false
-
-        try {
-          while (audioQueue.length > 0 && !abortController.signal.aborted) {
-            const next = audioQueue.shift()
-
-            if (!next) {
-              continue
-            }
-
-            if (hasPlayedSegment) {
-              await waitForQueuedPlaybackGap(abortController.signal)
-            }
-
-            await playAudioBlob(next.blob, {
-              onAnalysis: handleMotionPngAnalysis,
-              outputDeviceId: audioOutputDeviceId ?? undefined,
-              text: next.text,
-              signal: abortController.signal,
-              onStart: () => {
-                if (canUpdateSpeechState()) {
-                  if (!firstAudioObserved) {
-                    firstAudioObserved = true
-                    const latencyMs = Math.round(performance.now() - replyStartedAt)
-                    setRuntimeProgress((current) =>
-                      appendRuntimeActivity(current, {
-                        detail: `${latencyMs}ms で再生を開始しました。`,
-                        kind: "latency",
-                        label: "返答初動を計測しました",
-                        status: "done",
-                      }),
-                    )
-                  }
-                  setCaptionText(next.text)
-                  setEmotion(next.emotion)
-                  setStatus("playing")
-                  setAvatarState("speaking")
-                }
-              },
-              onViseme: setViseme,
-              onEnded: () => {
-                if (canUpdateSpeechState()) {
-                  resetAvatarMouth()
-                }
-              },
-              onError: handleSpeechError,
-            })
-            hasPlayedSegment = true
+    const pipeline = new SpeechPipeline({
+      abortSignal: abortController.signal,
+      voice: replyPlaybackVoice,
+      startedAt: replyStartedAt,
+      callbacks: {
+        onAnalysis: handleMotionPngAnalysis,
+        outputDeviceId: audioOutputDeviceId ?? undefined,
+        onStart: (segment, meta) => {
+          if (abortController.signal.aborted) return
+          if (meta.firstAudio) {
+            const latencyMs = Math.round(performance.now() - meta.startedAt)
+            setRuntimeProgress((current) =>
+              appendRuntimeActivity(current, {
+                detail: `${latencyMs}ms で再生を開始しました。`,
+                kind: "latency",
+                label: "返答初動を計測しました",
+                status: "done",
+              }),
+            )
           }
-        } catch (error) {
-          handleSpeechError(error)
-        }
-
-        playbackActive = false
-
-        if (!abortController.signal.aborted && !speechError) {
-          if (pendingSynthesisCount > 0) {
-            setEmotion("neutral")
-            setStatus("synthesizing")
-            setAvatarState("thinking")
-          } else {
-            finalizeIfDone()
+          setCaptionText(segment.text)
+          setEmotionSafe(segment.emotion)
+          setStatus("playing")
+          setAvatarState("speaking")
+        },
+        onViseme: setViseme,
+        onEnded: () => {
+          if (!abortController.signal.aborted) {
+            resetAvatarMouth()
           }
-        }
-      })()
-    }
-
-    const enqueueSpeechSegment = (segment: string) => {
-      const normalizedSegment = segment.trim()
-
-      if (!normalizedSegment) {
-        return
-      }
-
-      const segmentEmotion = inferEmotionFromText(normalizedSegment)
-      pendingSynthesisCount += 1
-
-      if (canUpdateSpeechState() && !playbackActive) {
-        setStatus("synthesizing")
-        setAvatarState("thinking")
-      }
-
-      synthesisTail = synthesisTail
-        .then(async () => {
-          if (abortController.signal.aborted) {
-            return
-          }
-
-          const wav = await synthesizeVoice(normalizedSegment, abortController.signal, replyPlaybackVoice)
-          audioQueue.push({ blob: wav, emotion: segmentEmotion, text: normalizedSegment })
-          startPlaybackIfNeeded()
-        })
-        .catch((error: unknown) => {
-          handleSpeechError(error)
-        })
-        .finally(() => {
-          pendingSynthesisCount -= 1
-
-          if (
-            !abortController.signal.aborted &&
-            !speechError &&
-            !playbackActive &&
-            pendingSynthesisCount > 0
-          ) {
+        },
+        onError: (error) => {
+          if (abortController.signal.aborted) return
+          const speechErrorMessage = error.message
+          showError(speechErrorMessage)
+          setEmotionSafe("neutral")
+          setStatus("error")
+          setAvatarState("error")
+          resetAvatarMouth()
+          setRuntimeProgress((current) =>
+            appendRuntimeActivity(current, {
+              detail: speechErrorMessage,
+              kind: "voice",
+              label: "自動返答の読み上げに失敗しました",
+              status: "error",
+            }),
+          )
+          abortController.abort()
+        },
+        onSynthesizing: () => {
+          if (!abortController.signal.aborted) {
+            setEmotionSafe("neutral")
             setStatus("synthesizing")
             setAvatarState("thinking")
           }
-
-          finalizeIfDone()
-        })
-    }
+        },
+        onPlaybackDone: () => {
+          if (abortController.signal.aborted) return
+          setCaptionText(normalizedResponse)
+          setStatus("ready")
+          setEmotionSafe(reply.finalEmotion ?? "neutral")
+          setAvatarState("idle")
+          resetAvatarMouth()
+          setRuntimeProgress((current) => finalizeRuntimeProgress(current))
+        },
+      },
+    })
 
     try {
       const { segments } = extractSpeechSegments(normalizedResponse, { force: true })
-      segments.forEach(enqueueSpeechSegment)
-      await synthesisTail
-
-      if (playbackPromise) {
-        await playbackPromise
-      }
-
-      finalizeIfDone()
+      segments.forEach((segment) => pipeline.enqueueText(segment))
+      await pipeline.awaitCompletion()
     } finally {
       if (abortRef.current === abortController) {
         abortRef.current = null

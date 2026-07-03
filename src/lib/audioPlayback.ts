@@ -17,35 +17,60 @@ const INTENSITY_OPEN_THRESHOLD = 0.045
 const INTENSITY_CLOSE_THRESHOLD = 0.025
 const FALLBACK_VOWEL_INTERVAL_MS = 130
 
+let sharedAudioContext: AudioContext | null = null
+let sharedAudioContextSinkId: string | undefined = undefined
+
+function getSharedAudioContext(outputDeviceId?: string): AudioContext | null {
+  const AudioContextClass = window.AudioContext ?? window.webkitAudioContext
+  if (!AudioContextClass) return null
+
+  // If the existing context is closed, discard it.
+  if (sharedAudioContext?.state === "closed") {
+    sharedAudioContext = null
+    sharedAudioContextSinkId = undefined
+  }
+
+  const targetSinkId = outputDeviceId || ""
+  const currentSinkId = sharedAudioContextSinkId ?? ""
+
+  // If we have a context and the sink changed, try to update sink on the fly.
+  if (sharedAudioContext && currentSinkId !== targetSinkId && "setSinkId" in sharedAudioContext) {
+    try {
+      (sharedAudioContext as unknown as { setSinkId(id: string): Promise<void> })
+        .setSinkId(targetSinkId)
+        .catch(() => {
+          // If dynamic sink update fails, invalidate so we recreate next time.
+          sharedAudioContext = null
+          sharedAudioContextSinkId = undefined
+        })
+      sharedAudioContextSinkId = targetSinkId || undefined
+    } catch {
+      // ignore
+    }
+  }
+
+  if (!sharedAudioContext) {
+    sharedAudioContext = new AudioContextClass()
+    sharedAudioContextSinkId = targetSinkId || undefined
+    if ("setSinkId" in sharedAudioContext) {
+      try {
+        (sharedAudioContext as unknown as { setSinkId(id: string): Promise<void> })
+          .setSinkId(targetSinkId)
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  return sharedAudioContext
+}
+
 export async function playAudioBlob(blob: Blob, options: PlayAudioOptions): Promise<void> {
   const audioUrl = URL.createObjectURL(blob)
   const audio = new Audio(audioUrl)
-  const AudioContextClass = window.AudioContext ?? window.webkitAudioContext
 
-  // Route AudioContext itself to the requested output device when supported.
-  // This is more reliable than HTMLAudioElement.setSinkId because
-  // createMediaElementSource() hijacks the audio element output into the graph.
-  const audioContext = AudioContextClass ? new AudioContextClass() : null
-
-  if (audioContext && options.outputDeviceId && "setSinkId" in audioContext) {
-    try {
-      await (
-        audioContext as unknown as { setSinkId(id: string): Promise<void> }
-      ).setSinkId(options.outputDeviceId)
-    } catch (sinkError) {
-      console.warn("[AudioPlayback] AudioContext.setSinkId failed:", sinkError)
-    }
-  }
-
-  if (options.outputDeviceId && "setSinkId" in audio) {
-    try {
-      await (
-        audio as unknown as { setSinkId(id: string): Promise<void> }
-      ).setSinkId(options.outputDeviceId)
-    } catch (audioSinkError) {
-      console.warn("[AudioPlayback] Audio.setSinkId failed:", audioSinkError)
-    }
-  }
+  // Use a shared AudioContext to avoid browser limits on concurrent contexts.
+  const audioContext = getSharedAudioContext(options.outputDeviceId)
 
   const analyser = audioContext?.createAnalyser() ?? null
   const source = audioContext ? audioContext.createMediaElementSource(audio) : null
@@ -114,7 +139,8 @@ export async function playAudioBlob(blob: Blob, options: PlayAudioOptions): Prom
       audio.src = ""
       URL.revokeObjectURL(audioUrl)
       emit("closed")
-      void audioContext?.close().catch(() => undefined)
+      // Suspend the shared context instead of closing it so it can be reused.
+      void audioContext?.suspend().catch(() => undefined)
     }
 
     const finish = () => {

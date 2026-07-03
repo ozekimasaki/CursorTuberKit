@@ -100,7 +100,7 @@ export class MotionPngEngine {
     this.videoCanvas = elements.videoCanvas
     this.mouthCanvas = elements.mouthCanvas
 
-    const videoCtx = this.videoCanvas.getContext("2d")
+    const videoCtx = this.videoCanvas.getContext("2d", { willReadFrequently: true })
     const mouthCtx = this.mouthCanvas.getContext("2d")
     if (!videoCtx || !mouthCtx) {
       throw new Error("MotionPNGTuber の描画コンテキストを初期化できませんでした。")

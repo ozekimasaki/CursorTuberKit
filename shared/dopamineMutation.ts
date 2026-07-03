@@ -192,7 +192,7 @@ export function emotionToHueShift(emotion: string): number {
     case "好き":
       return 320 // pink
     default:
-      return Math.floor(Math.random() * 360)
+      return 0
   }
 }
 

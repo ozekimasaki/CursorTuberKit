@@ -19,7 +19,6 @@ import type { PlatformViewerEvent } from "../../shared/platformChat"
 
 const MORPH_INTERVAL_MS = 100
 const HEAVY_MUTATION_COOLDOWN_MS = 60_000
-const CHAIN_REACTION_CHANCE = 0.2
 
 export type DopamineEngine = {
   state: DopamineState
@@ -31,11 +30,14 @@ export type DopamineEngine = {
   setLiveMutationBusy: (busy: boolean) => void
 }
 
+const DIRECTOR_THROTTLE_MS = 5000
+
 export function useDopamineEngine(): DopamineEngine {
   const [state, setState] = useState<DopamineState>(createDefaultDopamineState())
   const stateRef = useRef<DopamineState>(state)
   const morphTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const cooldownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastDirectorCallAtRef = useRef(0)
 
   useEffect(() => {
     stateRef.current = state
@@ -119,18 +121,6 @@ export function useDopamineEngine(): DopamineEngine {
 
       // Start the visual morph animation
       startMorphing(targetVisual, targetVisual.morphDurationMs)
-
-      // Random chain reaction (higher chance with AI director)
-      if (Math.random() < CHAIN_REACTION_CHANCE) {
-        setTimeout(() => {
-          const chainCue: MutationCue = {
-            kind: "chain_reaction",
-            intensity: 0.85,
-            receivedAt: new Date().toISOString(),
-          }
-          triggerCue(chainCue)
-        }, targetVisual.morphDurationMs + 400)
-      }
     },
     [startMorphing],
   )
@@ -155,9 +145,17 @@ export function useDopamineEngine(): DopamineEngine {
         // ignore
       }
 
+      const now = Date.now()
+      if (now - lastDirectorCallAtRef.current < DIRECTOR_THROTTLE_MS) {
+        console.log(`[DopamineEngine] AI director throttled (last call ${now - lastDirectorCallAtRef.current}ms ago). Using LOCAL fallback.`)
+        triggerCue(cue)
+        return
+      }
+
       // Try AI director first
       try {
         console.log(`[DopamineEngine] Calling AI director...`)
+        lastDirectorCallAtRef.current = Date.now()
         const res = await fetch("/api/dopamine/direct", {
           method: "POST",
           headers: { "Content-Type": "application/json" },

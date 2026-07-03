@@ -347,9 +347,11 @@ try {
   writeOutput({ type: "done" })
 } catch (error) {
   if (!receivedTerminationSignal) {
+    const errorMessage = error instanceof Error ? error.message : "Cursor 応答の生成に失敗しました。"
+    console.error(`[CursorWorker] Fatal error: ${errorMessage}`, error instanceof Error ? error.stack : "")
     writeOutput({
       type: "error",
-      message: error instanceof Error ? error.message : "Cursor 応答の生成に失敗しました。",
+      message: errorMessage,
     })
     process.exitCode = 1
   }

@@ -1,6 +1,7 @@
 import type { AutomationAction } from "../../shared/automation"
 import type { Emotion } from "../../shared/emotion"
 import type { ModerationAssessment } from "../../shared/moderation"
+import type { VoiceMutationParams } from "../../shared/dopamineMutation"
 
 export type PreparedAutoReply = {
   action: AutomationAction | null
@@ -12,6 +13,7 @@ export type PreparedAutoReply = {
   responseText: string
   sequence: number
   source: "content" | "viewer"
+  voiceSnapshot?: VoiceMutationParams
 }
 
 export function enqueuePreparedReply(

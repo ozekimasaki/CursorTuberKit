@@ -97,17 +97,19 @@ export function assessViewerEventTriage(event: PlatformViewerEvent): ViewerEvent
     reasons.push("review 判定")
   }
 
-  return score >= 2
-    ? {
-        action: "queue",
-        reason: reasons.join(" / "),
-        score,
-      }
-    : {
-        action: "queue",
-        reason: reasons[0] ?? "優先度は低めですが、候補として保持します。",
-        score,
-      }
+  if (score >= 2) {
+    return {
+      action: "queue",
+      reason: reasons.join(" / "),
+      score,
+    }
+  }
+
+  return {
+    action: "skip",
+    reason: reasons[0] ?? "優先度が低いため見送ります。",
+    score,
+  }
 }
 
 export function insertQueuedViewerEvent(queue: PlatformViewerEvent[], event: PlatformViewerEvent) {
