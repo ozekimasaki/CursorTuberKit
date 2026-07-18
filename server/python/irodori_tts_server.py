@@ -21,7 +21,7 @@ import json
 import os
 import sys
 import tempfile
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs, urlparse
 
 
@@ -154,6 +154,9 @@ def make_handler(infer_module):
                     print(f"[irodori-tts-server] synthesis failed: {exc}", flush=True)
                     self.send_error(500, str(exc))
                     return
+                if not wav:
+                    self.send_error(500, "synthesis produced no audio")
+                    return
 
                 self._send_wav(wav)
                 return
@@ -194,7 +197,15 @@ def synthesize(infer_module, text: str, seconds: float) -> bytes:
         if no_ref:
             sys.argv.append("--no-ref")
 
-        infer_module.main()
+        try:
+            infer_module.main()
+        except SystemExit as exc:
+            # Treat successful sys.exit(0) as a normal return; forward errors.
+            if exc.code not in (0, None):
+                raise
+
+        if not os.path.exists(output_path):
+            raise RuntimeError("TTS engine did not produce an output file.")
 
         with open(output_path, "rb") as f:
             return f.read()
@@ -209,7 +220,7 @@ def main() -> int:
     args = parse_args()
     infer_module = load_infer_module(args)
     handler = make_handler(infer_module)
-    server = ThreadingHTTPServer((args.host, args.port), handler)
+    server = HTTPServer((args.host, args.port), handler)
     print(f"[irodori-tts-server] listening on http://{args.host}:{args.port}", flush=True)
     try:
         server.serve_forever()
