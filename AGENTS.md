@@ -20,6 +20,29 @@ On Windows, `AGENTS.md` and `AGENTS.MD` cannot coexist as separate files, so kee
 - Include the public repository URL when touching public-facing setup docs: <https://github.com/ozekimasaki/CursorTuberKit>
 - When documenting MotionPNGTuber support, keep the upstream reference visible: <https://github.com/rotejin/MotionPNGTuber>
 
+## Project layout
+
+- `src/` — React client. Entry point `src/main.tsx` (loaded by `index.html`); `src/App.tsx` is the orchestrator. Also `src/components/`, `src/hooks/`, `src/lib/`, `src/styles/`.
+- `server/` — Bun/Express backend. Entry point `server/index.ts` (built to `dist/server/index.js`). Includes Cursor/VOICEVOX/MemKraft integration, `server/chatSources/` (youtube/twitch/kick), and `server/discovery/`.
+- `shared/` — code shared between client and server (character state, sins, prompts, moderation).
+- `config/` — `defaults.json`, `local.example.json`, and `load-config.mjs` (the JSON config loader with schema validation and `local.json` overrides). Non-secret settings live here, not in `.env`.
+- `scripts/` — `tasks.mjs` is the cross-platform task runner behind every npm script; also `voicevox.mjs`, `memkraft.ts`, and `ensure-supported-install.mjs`.
+- `tools/` — one-off SVG inspection helpers.
+- `vendor/MotionPNGTuber_Player` — git submodule.
+- Config: `tsconfig.json` (client/shared, `noEmit`), `tsconfig.node.json` (server/shared/scripts), `vite.config.ts`, `vitest.config.ts`.
+
+## Setup
+
+- Install: `npm install` (or `bun install`). Initialize the submodule with `git submodule update --init --recursive`.
+- Requires Node.js 22+ (`engines`); Bun 1.3.11+ is supported via `:bun` script variants. `deno.json` and `devbox.json` provide optional alternative runners.
+- Copy `.env.example` to `.env` for secrets only (`CURSOR_API_KEY`, optional Kick/MCP). Do not set the legacy env vars listed in `config/load-config.mjs` — they are rejected; use `config/local.json` instead.
+
+## Coding conventions
+
+- TypeScript with `strict` mode; ESM (`"type": "module"`). Match the existing style (double quotes, no semicolons in most files).
+- Keep the `config/load-config.mjs` schema and `config/load-config.d.ts` in sync when adding config keys.
+- Prefer the existing cross-platform `scripts/tasks.mjs` Node scripts over POSIX-only shell snippets.
+
 ## Key implementation notes
 
 - `src/App.tsx` is the main orchestration file for viewer comment intake, queueing, reply generation, autoplay, subtitle state, avatar switching, background replacement, and automatic content.
@@ -35,5 +58,7 @@ On Windows, `AGENTS.md` and `AGENTS.MD` cannot coexist as separate files, so kee
 
 ## Validation
 
-- Run `npm run typecheck`
-- Run `npm run build`
+- Run `npm run typecheck` (runs `tsc --noEmit` against `tsconfig.json` and `tsconfig.node.json`).
+- Run `npm run test` (Vitest over `*.test.ts` in `src/`, `shared/`, and `server/`).
+- Run `npm run build` before finishing larger changes.
+- There is no lint or formatter script configured; do not invent one. Rely on `typecheck` and `test`.
