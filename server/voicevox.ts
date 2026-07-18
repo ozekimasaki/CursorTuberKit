@@ -72,6 +72,7 @@ export async function synthesizeVoice({ signal, text, voice }: SynthesizeVoiceOp
 }
 
 let cachedSpeakers: { fetchedAt: number; groups: VoicevoxSpeakerGroup[] } | null = null
+let inflightSpeakersFetch: Promise<VoicevoxSpeakerGroup[]> | null = null
 const SPEAKERS_CACHE_TTL_MS = 60_000
 
 export async function fetchVoicevoxSpeakers(signal?: AbortSignal): Promise<VoicevoxSpeakerGroup[]> {
@@ -80,16 +81,28 @@ export async function fetchVoicevoxSpeakers(signal?: AbortSignal): Promise<Voice
     return cachedSpeakers.groups
   }
 
-  const url = `${getVoicevoxUrl()}/speakers`
-  const response = await fetch(url, { signal })
-  if (!response.ok) {
-    throw new VoicevoxError(await readVoicevoxError(response, "VOICEVOX /speakers の取得に失敗しました。"))
+  if (inflightSpeakersFetch) {
+    return inflightSpeakersFetch
   }
 
-  const raw = (await response.json()) as unknown
-  const groups = normalizeSpeakerGroups(raw)
-  cachedSpeakers = { fetchedAt: now, groups }
-  return groups
+  inflightSpeakersFetch = (async () => {
+    const url = `${getVoicevoxUrl()}/speakers`
+    const response = await fetch(url, { signal })
+    if (!response.ok) {
+      throw new VoicevoxError(await readVoicevoxError(response, "VOICEVOX /speakers の取得に失敗しました。"))
+    }
+
+    const raw = (await response.json()) as unknown
+    const groups = normalizeSpeakerGroups(raw)
+    cachedSpeakers = { fetchedAt: Date.now(), groups }
+    return groups
+  })()
+
+  try {
+    return await inflightSpeakersFetch
+  } finally {
+    inflightSpeakersFetch = null
+  }
 }
 
 export function clearVoicevoxSpeakerCache() {

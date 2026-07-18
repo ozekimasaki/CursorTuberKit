@@ -184,22 +184,6 @@ function normalizeYouTubeAction(action: unknown, target: string): PlatformViewer
     return null
   }
 
-  if (isYouTubeTextMessage(item)) {
-    const text = normalizeViewerText(item.message.toString())
-    if (!text) return null
-      return {
-        authorName: item.author.name,
-        id: `youtube:${item.id}`,
-        isMonetized: false,
-        kind: "comment",
-        moderation: createAllowModerationAssessment(),
-        platform: "youtube",
-        receivedAt: toIsoTime(item.timestamp),
-        target,
-        text,
-    }
-  }
-
   if (isYouTubePaidMessage(item)) {
     const text = normalizeViewerText(item.message.toString())
     if (!text) return null
@@ -248,6 +232,22 @@ function normalizeYouTubeAction(action: unknown, target: string): PlatformViewer
       id: `youtube:${item.id}`,
       isMonetized: true,
       kind: "membership",
+      moderation: createAllowModerationAssessment(),
+      platform: "youtube",
+      receivedAt: toIsoTime(item.timestamp),
+      target,
+      text,
+    }
+  }
+
+  if (isYouTubeTextMessage(item)) {
+    const text = normalizeViewerText(item.message.toString())
+    if (!text) return null
+    return {
+      authorName: item.author.name,
+      id: `youtube:${item.id}`,
+      isMonetized: false,
+      kind: "comment",
       moderation: createAllowModerationAssessment(),
       platform: "youtube",
       receivedAt: toIsoTime(item.timestamp),

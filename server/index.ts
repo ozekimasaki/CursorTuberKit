@@ -195,7 +195,7 @@ app.delete("/api/chat-settings/presets/:presetId", asyncRoute(async (request, re
   response.json({ ok: true })
 }))
 
-app.get("/api/voicevox/health", async (_request, response) => {
+app.get("/api/voicevox/health", asyncRoute(async (_request, response) => {
   const abortController = new AbortController()
   const timeout = setTimeout(() => abortController.abort(), 3000)
 
@@ -207,7 +207,7 @@ app.get("/api/voicevox/health", async (_request, response) => {
   } finally {
     clearTimeout(timeout)
   }
-})
+}))
 
 app.get("/api/voicevox/speakers", async (_request, response) => {
   const abortController = new AbortController()
@@ -689,14 +689,6 @@ app.post("/api/chat/stream", async (request: Request<Record<string, never>, unkn
   }
 })
 
-if (process.env.NODE_ENV === "production") {
-  const clientDistPath = path.resolve(__dirname, "../client")
-  app.use(express.static(clientDistPath))
-  app.get("*", (_request, response) => {
-    response.sendFile(path.join(clientDistPath, "index.html"))
-  })
-}
-
 app.post(
   "/api/autopilot/topic",
   async (
@@ -847,6 +839,28 @@ app.post(
   },
 )
 
-app.listen(port, () => {
+if (process.env.NODE_ENV === "production") {
+  const clientDistPath = path.resolve(__dirname, "../client")
+  app.use(express.static(clientDistPath))
+  app.get("*", (request, response) => {
+    if (request.path.startsWith("/api/")) {
+      response.status(404).json({ error: "指定された API エンドポイントが見つかりません。" })
+      return
+    }
+
+    response.sendFile(path.join(clientDistPath, "index.html"))
+  })
+}
+
+const server = app.listen(port, () => {
   console.log(`${characterProfile.agentName} server listening on http://localhost:${port}`)
+})
+
+server.on("error", (error: NodeJS.ErrnoException) => {
+  if (error.code === "EADDRINUSE") {
+    console.error(`ポート ${port} は既に使用されています。他のプロセスを停止するか、config でポートを変更してください。`)
+  } else {
+    console.error("サーバーの起動に失敗しました:", error)
+  }
+  process.exit(1)
 })

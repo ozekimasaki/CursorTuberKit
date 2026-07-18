@@ -90,44 +90,48 @@ export async function* streamAiResponse({
   const decoder = new TextDecoder()
   let buffer = ""
 
-  while (true) {
-    const { done, value } = await reader.read()
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
 
-    if (done) {
-      break
-    }
-
-    buffer += decoder.decode(value, { stream: true })
-    const frames = buffer.split("\n\n")
-    buffer = frames.pop() ?? ""
-
-    for (const frame of frames) {
-      const parsed = parseSseFrame(frame)
-
-      if (!parsed) {
-        continue
+      if (done) {
+        break
       }
 
-      const event = toAiStreamEvent(parsed)
+      buffer += decoder.decode(value, { stream: true })
+      const frames = buffer.split("\n\n")
+      buffer = frames.pop() ?? ""
 
-      if (event) {
-        yield event
+      for (const frame of frames) {
+        const parsed = parseSseFrame(frame)
+
+        if (!parsed) {
+          continue
+        }
+
+        const event = toAiStreamEvent(parsed)
+
+        if (event) {
+          yield event
+        }
       }
     }
-  }
 
-  buffer += decoder.decode()
+    buffer += decoder.decode()
 
-  if (buffer.trim()) {
-    const parsed = parseSseFrame(buffer)
+    if (buffer.trim()) {
+      const parsed = parseSseFrame(buffer)
 
-    if (parsed) {
-      const event = toAiStreamEvent(parsed)
+      if (parsed) {
+        const event = toAiStreamEvent(parsed)
 
-      if (event) {
-        yield event
+        if (event) {
+          yield event
+        }
       }
     }
+  } finally {
+    await reader.cancel().catch(() => undefined)
   }
 }
 
