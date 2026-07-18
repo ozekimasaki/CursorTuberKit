@@ -60,6 +60,15 @@ const schema = {
       port: "number"
     }
   },
+  irodori: {
+    enabled: "boolean",
+    url: "string",
+    pythonBin: "string",
+    checkpoint: ["string", "null"],
+    noRef: "boolean",
+    useFused: "boolean",
+    forceFp16: "boolean"
+  },
   memkraft: {
     dir: "string",
     executionMode: ["local", "container"],

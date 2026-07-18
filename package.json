@@ -29,7 +29,10 @@
     "memkraft:stop": "node scripts/tasks.mjs memkraft:stop",
     "voicevox:start": "node scripts/tasks.mjs voicevox:start",
     "voicevox:status": "node scripts/tasks.mjs voicevox:status",
-    "voicevox:stop": "node scripts/tasks.mjs voicevox:stop"
+    "voicevox:stop": "node scripts/tasks.mjs voicevox:stop",
+    "irodori:start": "node scripts/tasks.mjs irodori:start",
+    "irodori:status": "node scripts/tasks.mjs irodori:status",
+    "irodori:stop": "node scripts/tasks.mjs irodori:stop"
   },
   "dependencies": {
     "@cursor/sdk": "^1.0.18",

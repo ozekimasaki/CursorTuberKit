@@ -133,7 +133,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function getVoicevoxUrl() {
-  return readAppConfig().voicevox.url.replace(/\/$/, "")
+  const config = readAppConfig()
+  if (config.irodori.enabled) {
+    return config.irodori.url.replace(/\/$/, "")
+  }
+  return config.voicevox.url.replace(/\/$/, "")
 }
 
 function getVoicevoxSpeaker() {

@@ -50,6 +50,15 @@ export type AppConfig = {
     defaultSpeakerId: number
     url: string
   }
+  irodori: {
+    checkpoint: string | null
+    enabled: boolean
+    forceFp16: boolean
+    noRef: boolean
+    pythonBin: string
+    url: string
+    useFused: boolean
+  }
 }
 
 let cachedConfig: AppConfig | null = null
@@ -85,6 +94,7 @@ function normalizeAppConfig(value: unknown): AppConfig {
   const automation = readRecord(value.automation, "config.automation")
   const voicevox = readRecord(value.voicevox, "config.voicevox")
   const voicevoxContainer = readRecord(voicevox.container, "config.voicevox.container")
+  const irodori = readRecord(value.irodori, "config.irodori")
   const memkraft = readRecord(value.memkraft, "config.memkraft")
   const memkraftContainer = readRecord(memkraft.container, "config.memkraft.container")
   const mcp = readRecord(value.mcp, "config.mcp")
@@ -139,6 +149,15 @@ function normalizeAppConfig(value: unknown): AppConfig {
       },
       defaultSpeakerId: readNonNegativeInteger(voicevox.defaultSpeakerId, "config.voicevox.defaultSpeakerId"),
       url: readString(voicevox.url, "config.voicevox.url"),
+    },
+    irodori: {
+      checkpoint: typeof irodori.checkpoint === "string" ? irodori.checkpoint : null,
+      enabled: irodori.enabled === true,
+      forceFp16: irodori.forceFp16 !== false,
+      noRef: irodori.noRef !== false,
+      pythonBin: readString(irodori.pythonBin, "config.irodori.pythonBin"),
+      url: readString(irodori.url, "config.irodori.url"),
+      useFused: irodori.useFused !== false,
     },
   }
 }
