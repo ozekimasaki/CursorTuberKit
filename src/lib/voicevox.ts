@@ -38,9 +38,13 @@ export async function fetchVoicevoxSpeakers(signal?: AbortSignal): Promise<Voice
   return Array.isArray(body.groups) ? body.groups : []
 }
 
-export async function synthesizeVoice(text: string, signal: AbortSignal): Promise<Blob> {
+export async function synthesizeVoice(
+  text: string,
+  signal: AbortSignal,
+  emotion?: string,
+): Promise<Blob> {
   const response = await fetch("/api/voicevox/synthesis", {
-    body: JSON.stringify({ text }),
+    body: JSON.stringify({ text, ...(emotion ? { emotion } : {}) }),
     headers: {
       "Content-Type": "application/json",
     },

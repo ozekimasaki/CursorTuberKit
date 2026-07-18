@@ -67,7 +67,13 @@ function loadConfig(): AppConfig {
   rejectLegacyEnv()
   const defaults = readJson(path.resolve(process.cwd(), "config", "defaults.json"))
   const localPath = path.resolve(process.cwd(), "config", "local.json")
-  const local = existsSync(localPath) ? readJson(localPath) : {}
+  const local: Record<string, unknown> = existsSync(localPath) ? (readJson(localPath) as Record<string, unknown>) : {}
+  const testServerPort = readTestServerPort()
+  if (testServerPort !== undefined) {
+    const serverOverride = isRecord(local.server) ? { ...local.server } : {}
+    serverOverride.port = testServerPort
+    local.server = serverOverride
+  }
   return normalizeAppConfig(deepMerge(defaults, local))
 }
 
@@ -202,6 +208,14 @@ function readString(value: unknown, label: string): string {
 function readPort(value: unknown, label: string): number {
   const port = readNonNegativeInteger(value, label)
   if (port <= 0 || port > 65535) throw new Error(`${label} must be a valid TCP port.`)
+  return port
+}
+
+function readTestServerPort(): number | undefined {
+  const raw = process.env.CTK_SERVER_PORT
+  if (!raw) return undefined
+  const port = Number(raw)
+  if (!Number.isInteger(port) || port <= 0 || port > 65535) return undefined
   return port
 }
 

@@ -100,10 +100,12 @@ export async function collectCursorRun(run: Run, options: CursorRunCollectionOpt
       statusHistory.push(result.status)
     }
 
+    const finalText = text.trim() || result.result?.trim() || ""
+
     return {
       status: result.status,
       statusHistory,
-      text,
+      text: finalText,
       toolCalls,
       usage,
     }

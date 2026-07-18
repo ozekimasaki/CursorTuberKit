@@ -863,7 +863,7 @@ export function App() {
             return
           }
 
-          const wav = await synthesizeVoice(normalizedSegment, abortController.signal)
+          const wav = await synthesizeVoice(normalizedSegment, abortController.signal, emotion)
           audioQueue.push({ blob: wav, emotion, text: normalizedSegment })
           startPlaybackIfNeeded()
         })
@@ -904,7 +904,7 @@ export function App() {
             }
 
             bridgeRequested = true
-            void getCachedBridgeSpeech(bridgeSpeech, abortController.signal)
+            void getCachedBridgeSpeech(bridgeSpeech, abortController.signal, "neutral")
               .then((wav) => {
                 if (abortController.signal.aborted || speechError || firstAudioObserved) {
                   return
@@ -1243,14 +1243,14 @@ export function App() {
     autoReplyGenerationAbortControllersRef.current.clear()
   }
 
-  async function getCachedBridgeSpeech(text: string, signal: AbortSignal) {
+  async function getCachedBridgeSpeech(text: string, signal: AbortSignal, emotion?: string) {
     const cached = bridgeSpeechCacheRef.current.get(text)
 
     if (cached) {
       return cached
     }
 
-    const wav = await synthesizeVoice(text, signal)
+    const wav = await synthesizeVoice(text, signal, emotion)
     bridgeSpeechCacheRef.current.set(text, wav)
     return wav
   }
@@ -1958,7 +1958,7 @@ export function App() {
             return
           }
 
-          const wav = await synthesizeVoice(normalizedSegment, abortController.signal)
+          const wav = await synthesizeVoice(normalizedSegment, abortController.signal, segmentEmotion)
           audioQueue.push({ blob: wav, emotion: segmentEmotion, text: normalizedSegment })
           startPlaybackIfNeeded()
         })

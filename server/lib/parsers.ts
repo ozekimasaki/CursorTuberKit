@@ -1,6 +1,7 @@
 import { chatAutomationReplyStyles, type ChatAutomationRequest } from "../../shared/automation.js"
 import type { AutopilotTopicRequestBody } from "../../shared/autopilot.js"
 import { characterSinNames, normalizeCharacterSinValues } from "../../shared/characterState.js"
+import { emotionValues, type Emotion } from "../../shared/emotion.js"
 import { isPlatformChatMode, type PlatformChatMode } from "../../shared/platformChat.js"
 import type { PersonaAutoRewriteRequestBody, PersonaCuratorTurn } from "../../shared/personaCurator.js"
 import type { ConversationTurn } from "../aiCommon.js"
@@ -15,6 +16,7 @@ export type ChatStreamRequestBody = {
 
 export type VoicevoxSynthesisRequestBody = {
   text?: unknown
+  emotion?: unknown
 }
 
 export type PlatformChatStartRequestBody = {
@@ -294,6 +296,14 @@ export function parseSpeechText(body: VoicevoxSynthesisRequestBody) {
   }
 
   return text
+}
+
+export function parseSpeechEmotion(body: VoicevoxSynthesisRequestBody): Emotion | null {
+  if (typeof body.emotion !== "string") {
+    return null
+  }
+
+  return emotionValues.includes(body.emotion as Emotion) ? (body.emotion as Emotion) : null
 }
 
 export function parseChatAutomationReplyStyle(value: unknown): ChatAutomationRequest["replyStyle"] {

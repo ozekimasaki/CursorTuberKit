@@ -16,11 +16,21 @@ const INTENSITY_OPEN_THRESHOLD = 0.045
 const INTENSITY_CLOSE_THRESHOLD = 0.025
 const FALLBACK_VOWEL_INTERVAL_MS = 130
 
+let sharedAudioContext: AudioContext | null = null
+
+function getSharedAudioContext(): AudioContext | null {
+  const AudioContextClass = window.AudioContext ?? window.webkitAudioContext
+  if (!AudioContextClass) return null
+  if (!sharedAudioContext || sharedAudioContext.state === "closed") {
+    sharedAudioContext = new AudioContextClass()
+  }
+  return sharedAudioContext
+}
+
 export async function playAudioBlob(blob: Blob, options: PlayAudioOptions): Promise<void> {
   const audioUrl = URL.createObjectURL(blob)
   const audio = new Audio(audioUrl)
-  const AudioContextClass = window.AudioContext ?? window.webkitAudioContext
-  const audioContext = AudioContextClass ? new AudioContextClass() : null
+  const audioContext = getSharedAudioContext()
   const analyser = audioContext?.createAnalyser() ?? null
   const source = audioContext ? audioContext.createMediaElementSource(audio) : null
   const frequencyData = analyser ? new Uint8Array(analyser.frequencyBinCount) : null
@@ -88,7 +98,8 @@ export async function playAudioBlob(blob: Blob, options: PlayAudioOptions): Prom
       audio.src = ""
       URL.revokeObjectURL(audioUrl)
       emit("closed")
-      void audioContext?.close().catch(() => undefined)
+      source?.disconnect()
+      analyser?.disconnect()
     }
 
     const finish = () => {
