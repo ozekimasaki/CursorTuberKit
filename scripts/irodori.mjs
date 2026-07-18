@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync, unlinkSync } from "node:fs"
+import { existsSync, mkdirSync, openSync, readFileSync, writeFileSync, unlinkSync } from "node:fs"
 import path from "node:path"
 import { spawn } from "node:child_process"
 import { loadAppConfig } from "../config/load-config.mjs"
@@ -14,6 +14,8 @@ const noRef = irodoriConfig.noRef ?? true
 const useFused = irodoriConfig.useFused ?? true
 const forceFp16 = irodoriConfig.forceFp16 ?? true
 const pidFile = path.resolve(projectRoot, "memory", "irodori.pid")
+const outLog = path.resolve(projectRoot, "memory", "irodori.out")
+const errLog = path.resolve(projectRoot, "memory", "irodori.err")
 
 if (!command || !["start", "stop", "status"].includes(command)) {
   console.error("Usage: node scripts/irodori.mjs <start|stop|status>")
@@ -52,15 +54,37 @@ async function startIrodori() {
   if (!useFused) args.push("--no-fused")
   if (!forceFp16) args.push("--no-fp16")
 
+  if (!existsSync(path.dirname(pidFile))) {
+    mkdirSync(path.dirname(pidFile), { recursive: true })
+  }
+
   const child = spawn(pythonBin, args, {
     detached: true,
-    stdio: ["ignore", "inherit", "inherit"],
+    stdio: ["ignore", openSync(outLog, "a"), openSync(errLog, "a")],
+  })
+
+  await new Promise((resolve, reject) => {
+    child.once("error", reject)
+    child.once("spawn", () => {
+      child.removeListener("error", reject)
+      resolve()
+    })
   })
 
   child.unref()
   writeFileSync(pidFile, String(child.pid))
 
-  await waitForEngine()
+  const childExit = new Promise((_, reject) => {
+    child.once("exit", (code) => {
+      reject(new Error(`Irodori-TTS-Lite server exited with code ${code}. Check ${errLog} for details.`))
+    })
+  })
+
+  try {
+    await Promise.race([waitForEngine(), childExit])
+  } catch (error) {
+    throw error
+  }
   console.log(`Irodori-TTS-Lite started at ${irodoriUrl} (pid: ${child.pid})`)
 }
 
