@@ -15,6 +15,7 @@ CursorTuberKit is a browser-first streaming avatar kit for **Cursor-powered** VT
 - YouTube / Twitch / Kick live comment intake
 - Autoplay queueing with serialized spoken playback
 - Custom stage background replacement with image or looping video
+- Dark-first operator console with LIVE status pill, connection uptime, and a light/dark theme toggle
 - Bring-your-own avatar workflow built around swap-ready assets and inspection tooling
 
 ## Who this is for
