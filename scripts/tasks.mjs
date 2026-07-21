@@ -121,6 +121,15 @@ const tasks = {
   async "voicevox:stop"() {
     await runJsScript(["scripts/voicevox.mjs", "stop"])
   },
+  async "irodori:start"() {
+    await runJsScript(["scripts/irodori.mjs", "start"])
+  },
+  async "irodori:status"() {
+    await runJsScript(["scripts/irodori.mjs", "status"])
+  },
+  async "irodori:stop"() {
+    await runJsScript(["scripts/irodori.mjs", "stop"])
+  },
   async "_server-dev"() {
     await assertPortAvailable(backendPort, "Backend server")
     await runServerDev([], { preferBun: process.argv.includes("--prefer-bun") })

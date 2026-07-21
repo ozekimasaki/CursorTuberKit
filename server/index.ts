@@ -63,6 +63,7 @@ import {
   parsePlatformChatConfig,
   parsePrompt,
   parseRecentTurns,
+  parseSpeechEmotion,
   parseSpeechText,
   type ChatStreamRequestBody,
   type PlatformChatStartRequestBody,
@@ -282,6 +283,8 @@ app.post(
       return
     }
 
+    const bodyEmotion = parseSpeechEmotion(request.body)
+
     const abortController = new AbortController()
     let streamCompleted = false
 
@@ -293,7 +296,13 @@ app.post(
 
     try {
       const settings = await readChatSettings().catch(() => null)
-      const wav = await synthesizeVoice({ signal: abortController.signal, text, voice: settings?.voice })
+      const emotion = bodyEmotion ?? inferEmotionFromText(text)
+      const wav = await synthesizeVoice({
+        signal: abortController.signal,
+        text,
+        voice: settings?.voice,
+        emotion,
+      })
 
       if (!abortController.signal.aborted) {
         streamCompleted = true

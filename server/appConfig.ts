@@ -50,6 +50,15 @@ export type AppConfig = {
     defaultSpeakerId: number
     url: string
   }
+  irodori: {
+    checkpoint: string | null
+    enabled: boolean
+    forceFp16: boolean
+    noRef: boolean
+    pythonBin: string
+    url: string
+    useFused: boolean
+  }
 }
 
 let cachedConfig: AppConfig | null = null
@@ -67,7 +76,13 @@ function loadConfig(): AppConfig {
   rejectLegacyEnv()
   const defaults = readJson(path.resolve(process.cwd(), "config", "defaults.json"))
   const localPath = path.resolve(process.cwd(), "config", "local.json")
-  const local = existsSync(localPath) ? readJson(localPath) : {}
+  const local: Record<string, unknown> = existsSync(localPath) ? (readJson(localPath) as Record<string, unknown>) : {}
+  const testServerPort = readTestServerPort()
+  if (testServerPort !== undefined) {
+    const serverOverride = isRecord(local.server) ? { ...local.server } : {}
+    serverOverride.port = testServerPort
+    local.server = serverOverride
+  }
   return normalizeAppConfig(deepMerge(defaults, local))
 }
 
@@ -79,6 +94,7 @@ function normalizeAppConfig(value: unknown): AppConfig {
   const automation = readRecord(value.automation, "config.automation")
   const voicevox = readRecord(value.voicevox, "config.voicevox")
   const voicevoxContainer = readRecord(voicevox.container, "config.voicevox.container")
+  const irodori = readRecord(value.irodori, "config.irodori")
   const memkraft = readRecord(value.memkraft, "config.memkraft")
   const memkraftContainer = readRecord(memkraft.container, "config.memkraft.container")
   const mcp = readRecord(value.mcp, "config.mcp")
@@ -133,6 +149,15 @@ function normalizeAppConfig(value: unknown): AppConfig {
       },
       defaultSpeakerId: readNonNegativeInteger(voicevox.defaultSpeakerId, "config.voicevox.defaultSpeakerId"),
       url: readString(voicevox.url, "config.voicevox.url"),
+    },
+    irodori: {
+      checkpoint: typeof irodori.checkpoint === "string" ? irodori.checkpoint : null,
+      enabled: irodori.enabled === true,
+      forceFp16: irodori.forceFp16 !== false,
+      noRef: irodori.noRef !== false,
+      pythonBin: readString(irodori.pythonBin, "config.irodori.pythonBin"),
+      url: readString(irodori.url, "config.irodori.url"),
+      useFused: irodori.useFused !== false,
     },
   }
 }
@@ -202,6 +227,14 @@ function readString(value: unknown, label: string): string {
 function readPort(value: unknown, label: string): number {
   const port = readNonNegativeInteger(value, label)
   if (port <= 0 || port > 65535) throw new Error(`${label} must be a valid TCP port.`)
+  return port
+}
+
+function readTestServerPort(): number | undefined {
+  const raw = process.env.CTK_SERVER_PORT
+  if (!raw) return undefined
+  const port = Number(raw)
+  if (!Number.isInteger(port) || port <= 0 || port > 65535) return undefined
   return port
 }
 

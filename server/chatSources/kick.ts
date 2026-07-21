@@ -1,7 +1,13 @@
-import { KickFlow } from "@gbrlstr/kick-flow"
+import { createRequire } from "node:module"
 import { createAllowModerationAssessment } from "../../shared/moderation.js"
 import type { PlatformViewerEvent } from "../../shared/platformChat.js"
 import { PlatformChatSource, asError, isRecord, normalizePlatformTarget, normalizeViewerText } from "../platformChatSource.js"
+
+type KickFlowConstructor = new (options: { clientId: string; clientSecret: string }) => {
+  chat: {
+    connectToChatByChannel(channel: string): Promise<unknown>
+  }
+}
 
 type KickWebSocketLike = {
   connect(): Promise<void>
@@ -27,6 +33,7 @@ export class KickChatSource extends PlatformChatSource {
       throw new Error("Kick mode requires KICK_CLIENT_ID and KICK_CLIENT_SECRET.")
     }
 
+    const KickFlow = await loadKickFlow()
     const client = new KickFlow({ clientId, clientSecret })
     const chat = (await client.chat.connectToChatByChannel(channel)) as KickWebSocketLike
 
@@ -188,5 +195,16 @@ function normalizeKickGiftSubscription(payload: unknown, target: string): Platfo
       giftedCount > 0
         ? `${payload.gifter_username} gifted ${giftedCount} subscriptions.`
         : `${payload.gifter_username} sent gifted subscriptions.`,
+  }
+}
+
+async function loadKickFlow(): Promise<KickFlowConstructor> {
+  try {
+    const module = await import("@gbrlstr/kick-flow")
+    return module.KickFlow as KickFlowConstructor
+  } catch {
+    const require = createRequire(import.meta.url)
+    const module = require("@gbrlstr/kick-flow")
+    return module.KickFlow as KickFlowConstructor
   }
 }

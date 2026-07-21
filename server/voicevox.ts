@@ -1,4 +1,6 @@
 import type { ChatVoiceSettings } from "../shared/chatSettings.js"
+import { voiceTuningRanges } from "../shared/chatSettings.js"
+import type { Emotion } from "../shared/emotion.js"
 import { readAppConfig } from "./appConfig.js"
 
 type AudioQuery = Record<string, unknown>
@@ -7,6 +9,7 @@ type SynthesizeVoiceOptions = {
   signal: AbortSignal
   text: string
   voice?: ChatVoiceSettings
+  emotion?: Emotion
 }
 
 export class VoicevoxError extends Error {
@@ -53,7 +56,7 @@ export async function getVoicevoxHealth(signal?: AbortSignal, voice?: ChatVoiceS
   }
 }
 
-export async function synthesizeVoice({ signal, text, voice }: SynthesizeVoiceOptions): Promise<Buffer> {
+export async function synthesizeVoice({ signal, text, voice, emotion }: SynthesizeVoiceOptions): Promise<Buffer> {
   const normalizedText = text.trim()
 
   if (!normalizedText) {
@@ -66,7 +69,7 @@ export async function synthesizeVoice({ signal, text, voice }: SynthesizeVoiceOp
 
   const speaker = voice?.speakerId ?? getVoicevoxSpeaker()
   const query = await createAudioQuery(normalizedText, speaker, signal)
-  const tunedQuery = tuneAudioQuery(query, voice)
+  const tunedQuery = tuneAudioQuery(query, voice, emotion)
   const wav = await synthesis(tunedQuery, speaker, signal)
   return Buffer.from(await wav.arrayBuffer())
 }
@@ -130,7 +133,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function getVoicevoxUrl() {
-  return readAppConfig().voicevox.url.replace(/\/$/, "")
+  const config = readAppConfig()
+  if (config.irodori.enabled) {
+    return config.irodori.url.replace(/\/$/, "")
+  }
+  return config.voicevox.url.replace(/\/$/, "")
 }
 
 function getVoicevoxSpeaker() {
@@ -181,14 +188,60 @@ async function synthesis(query: AudioQuery, speaker: number, signal: AbortSignal
   return response
 }
 
-function tuneAudioQuery(query: AudioQuery, voice?: ChatVoiceSettings): AudioQuery {
-  return {
+function tuneAudioQuery(query: AudioQuery, voice?: ChatVoiceSettings, emotion?: Emotion): AudioQuery {
+  const base = {
     ...query,
     intonationScale: readNumber(query.intonationScale, voice?.intonationScale ?? 1.15),
     pitchScale: readNumber(query.pitchScale, voice?.pitchScale ?? 0.02),
     speedScale: readNumber(query.speedScale, voice?.speedScale ?? 1.08),
     volumeScale: readNumber(query.volumeScale, voice?.volumeScale ?? 1),
   }
+  return applyEmotionToAudioQuery(base, emotion)
+}
+
+const emotionAdjustments: Record<
+  Emotion,
+  Partial<Pick<ChatVoiceSettings, "pitchScale" | "speedScale" | "intonationScale" | "volumeScale">>
+> = {
+  neutral: {},
+  joy: { intonationScale: 0.1, pitchScale: 0.03, speedScale: 0.05 },
+  delight: { intonationScale: 0.12, pitchScale: 0.02, speedScale: 0.08 },
+  anger: { intonationScale: 0.05, pitchScale: 0.05, speedScale: 0.1, volumeScale: 0.1 },
+  sadness: { intonationScale: -0.05, pitchScale: -0.03, speedScale: -0.08, volumeScale: -0.05 },
+}
+
+function applyEmotionToAudioQuery(query: AudioQuery, emotion?: Emotion): AudioQuery {
+  if (!emotion || emotion === "neutral") return query
+  const adjustment = emotionAdjustments[emotion]
+  if (!adjustment) return query
+
+  return {
+    ...query,
+    intonationScale: clamp(
+      readNumber(query.intonationScale, 0) + (adjustment.intonationScale ?? 0),
+      voiceTuningRanges.intonationScale.min,
+      voiceTuningRanges.intonationScale.max,
+    ),
+    pitchScale: clamp(
+      readNumber(query.pitchScale, 0) + (adjustment.pitchScale ?? 0),
+      voiceTuningRanges.pitchScale.min,
+      voiceTuningRanges.pitchScale.max,
+    ),
+    speedScale: clamp(
+      readNumber(query.speedScale, 0) + (adjustment.speedScale ?? 0),
+      voiceTuningRanges.speedScale.min,
+      voiceTuningRanges.speedScale.max,
+    ),
+    volumeScale: clamp(
+      readNumber(query.volumeScale, 0) + (adjustment.volumeScale ?? 0),
+      voiceTuningRanges.volumeScale.min,
+      voiceTuningRanges.volumeScale.max,
+    ),
+  }
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value))
 }
 
 function readNumber(value: unknown, fallback: number) {

@@ -26,6 +26,15 @@
       "port": 50021
     }
   },
+  "irodori": {
+    "enabled": false,
+    "url": "http://127.0.0.1:50022",
+    "pythonBin": "python",
+    "checkpoint": null,
+    "noRef": true,
+    "useFused": true,
+    "forceFp16": true
+  },
   "memkraft": {
     "dir": "./memory",
     "executionMode": "container",
