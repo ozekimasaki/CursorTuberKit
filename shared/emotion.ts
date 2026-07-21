@@ -5,7 +5,11 @@ export type Emotion = (typeof emotionValues)[number]
 export type FinalEmotionPayload = {
   emotion: Emotion
   hookObserved: boolean
-  source: "cursor-subagent" | "text-inference"
+  source: "agent-tool" | "cursor-subagent" | "text-inference"
+}
+
+export function isEmotionValue(value: unknown): value is Emotion {
+  return typeof value === "string" && emotionValues.includes(value as Emotion)
 }
 
 const emotionRules: Array<{ emotion: Exclude<Emotion, "neutral">; weight: number; tokens: readonly string[] }> = [

@@ -246,7 +246,7 @@ function isFinalEmotionPayload(value: unknown): value is FinalEmotionPayload {
   return (
     isRecord(value) &&
     typeof value.source === "string" &&
-    (value.source === "cursor-subagent" || value.source === "text-inference") &&
+    (value.source === "agent-tool" || value.source === "cursor-subagent" || value.source === "text-inference") &&
     typeof value.hookObserved === "boolean" &&
     typeof value.emotion === "string" &&
     emotionValues.includes(value.emotion as (typeof emotionValues)[number])
@@ -262,7 +262,10 @@ function isChatActionPayload(value: unknown): value is ChatActionPayload {
     chatActionStatuses.includes(value.status as (typeof chatActionStatuses)[number]) &&
     isChatProvider(value.provider) &&
     (value.detail === undefined || value.detail === null || typeof value.detail === "string") &&
-    (value.source === undefined || value.source === "cursor-subagent" || value.source === "text-inference")
+    (value.source === undefined ||
+      value.source === "agent-tool" ||
+      value.source === "cursor-subagent" ||
+      value.source === "text-inference")
   )
 }
 

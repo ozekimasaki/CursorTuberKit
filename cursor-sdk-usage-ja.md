@@ -1,6 +1,7 @@
 # Cursor SDK 利用箇所一覧
 
 作成日: 2026-05-17
+更新日: 2026-07-21
 
 参照元:
 - 公式ドキュメント: <https://cursor.com/ja/docs/sdk/typescript>
@@ -150,3 +151,22 @@
 - サブエージェント構成
 
 一方で、今回の実装確認では **`run.conversation()` を直接使っている箇所は見当たりませんでした。**
+
+---
+
+## 2026-07-21 の強化で新たに使い始めた SDK 機能
+
+| SDK 機能 | 実装箇所 | 使い方 |
+| --- | --- | --- |
+| `SDKCustomTool`（カスタムツール） | `server/cursorWorker.ts` `createMainRunCustomTools` | メイン会話 Run に `set_emotion` ツールを渡し、モデル自身が感情を申告できるようにしました。申告がある場合は最終感情（source: `agent-tool`）として優先採用し、ない場合は従来の Character Director / 本文推定にフォールバックします。 |
+| `SendOptions.onDelta`（`TextDeltaUpdate`） | `server/cursorWorker.ts` `startCursorRun` 呼び出し | トークン単位のテキストデルタを SSE に流し、字幕の初動レイテンシを下げました。デルタが届かない環境では従来の `run.stream()` 経由に自動で切り替わります（二重出力はチャネル選択で防止）。 |
+| `SendOptions.idempotencyKey` | `server/cursorWorker.ts` | メイン送信に UUID を付与し、再送時の二重 Run を防止します（`local.force` 再試行時は新しいキーを発行）。 |
+| 構造化エラー型（`AuthenticationError` / `RateLimitError` / `AgentBusyError` / `NetworkError` / `ConfigurationError`） | `server/cursorWorker.ts` `describeCursorWorkerError` | SDK のエラー型を判別して、配信者向けの日本語メッセージ（API キー確認・レート制限・再試行案内など）を返します。 |
+| `Cursor.models.list()` | `server/index.ts` `/api/cursor/models` | 利用可能モデル一覧を 10 分キャッシュ付きで返す API を追加しました。`config.cursor.model` の設定候補確認に使えます。 |
+
+今後の候補（未実装）:
+
+- `run.conversation()` による thinking を含む会話履歴の取得
+- `SDKUserMessage.images` による画像入力（スパチャ画像や配信画面の共有）
+- `Agent.list()` / `Agent.archive()` による古いローカルエージェントの棚卸し
+- `mode: "plan"` を使った配信企画（autopilot）の 2 段階化
