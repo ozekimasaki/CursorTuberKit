@@ -37,6 +37,20 @@
   --status-warn: var(--text-dim);
   --status-muted: var(--text-mute);
 
+  /* Operational status colors (operator console signals) */
+  --signal-ready: #1f9d55;
+  --signal-busy: #b45309;
+  --signal-playing: #2563eb;
+  --live: #e5484d;
+  --live-soft: rgba(229, 72, 77, 0.12);
+
+  /* Platform brand hints (badges only) */
+  --platform-youtube: #e5484d;
+  --platform-twitch: #9147ff;
+  --platform-kick: #3d9e10;
+  --monetized: #b8860b;
+  --monetized-soft: rgba(184, 134, 11, 0.1);
+
   /* Geometry */
   --radius-xs: 4px;
   --radius-sm: 6px;
@@ -74,4 +88,54 @@
   --motion-base: 180ms;
   --motion-slow: 260ms;
   --easing: cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+/* ============================================================
+   Dark theme — low-glare control room for long streaming
+   sessions. Default for the operator console.
+   ============================================================ */
+:root[data-theme="dark"] {
+  /* Surfaces */
+  --bg: #101012;
+  --surface: #18181b;
+  --surface-muted: #1f1f23;
+  --surface-sunk: #141416;
+
+  /* Borders */
+  --border: #29292e;
+  --border-strong: #3a3a41;
+  --border-focus: #fafafa;
+
+  /* Text */
+  --text: #f2f2f0;
+  --text-dim: #b6b6b2;
+  --text-mute: #83837e;
+  --text-faint: #5b5b57;
+
+  /* Accent (inverted monochrome) */
+  --accent: #f2f2f0;
+  --accent-soft: #dcdcda;
+  --accent-fg: #111111;
+  --accent-tint: rgba(242, 242, 240, 0.08);
+
+  /* State */
+  --danger: #f26d6a;
+  --danger-soft: rgba(242, 109, 106, 0.12);
+  --danger-border: rgba(242, 109, 106, 0.45);
+
+  /* Operational status colors */
+  --signal-ready: #3fcf76;
+  --signal-busy: #e0a03c;
+  --signal-playing: #5b96f7;
+  --live: #f0565b;
+  --live-soft: rgba(240, 86, 91, 0.16);
+
+  --platform-kick: #53fc18;
+  --monetized: #e2b23c;
+  --monetized-soft: rgba(226, 178, 60, 0.12);
+
+  /* Elevation */
+  --shadow-xs: 0 1px 1px rgba(0, 0, 0, 0.3);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.03);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.04);
 }

@@ -1,5 +1,6 @@
 import { FormEvent, KeyboardEvent, useEffect, useRef, useState, type ForwardedRef } from "react"
-import { Send, Settings as SettingsIcon, Square, Volume2, VolumeX } from "lucide-react"
+import { Moon, MonitorPlay, Send, Settings as SettingsIcon, Square, Sun, Volume2, VolumeX } from "lucide-react"
+import { useTheme } from "../hooks/useTheme"
 import { characterProfile } from "../../shared/characterProfile"
 import type {
   PlatformChatMode,
@@ -121,6 +122,9 @@ export function OperatorConsole(props: OperatorConsoleProps) {
 
   const [prompt, setPrompt] = useState("")
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+  const { theme, toggleTheme } = useTheme()
+  const [connectedSince, setConnectedSince] = useState<number | null>(null)
+  const [uptimeLabel, setUptimeLabel] = useState("")
   const isBusy = status === "thinking" || status === "synthesizing" || status === "playing"
   const canSubmit = !isBusy && prompt.trim().length > 0
   const isPlatformConnecting = platformState.status === "connecting"
@@ -133,6 +137,25 @@ export function OperatorConsole(props: OperatorConsoleProps) {
       document.body.classList.remove("operator-mode")
     }
   }, [])
+
+  useEffect(() => {
+    if (platformState.status === "connected") {
+      setConnectedSince((current) => current ?? Date.now())
+    } else {
+      setConnectedSince(null)
+    }
+  }, [platformState.status])
+
+  useEffect(() => {
+    if (connectedSince === null) {
+      setUptimeLabel("")
+      return
+    }
+    const update = () => setUptimeLabel(formatUptime(Date.now() - connectedSince))
+    update()
+    const timer = window.setInterval(update, 1000)
+    return () => window.clearInterval(timer)
+  }, [connectedSince])
 
   useEffect(() => {
     const ta = textareaRef.current
@@ -177,14 +200,24 @@ export function OperatorConsole(props: OperatorConsoleProps) {
           <span className={`op-header__dot op-header__dot--${runtimeTone}`} aria-hidden="true" />
           <span>{characterName}</span>
         </div>
+        {isPlatformConnected ? (
+          <span className="op-live-pill" role="status">
+            <span className="op-live-pill__dot" aria-hidden="true" />
+            LIVE
+            {uptimeLabel && <span className="op-live-pill__uptime">{uptimeLabel}</span>}
+          </span>
+        ) : (
+          <span className="op-offline-pill" role="status">
+            {isPlatformConnecting ? "接続中…" : "オフライン"}
+          </span>
+        )}
         <div className="op-header__status">
-          <span>{runtimeLabel}</span>
-          <span className="op-header__sep">·</span>
-          <span>{platformSummary}</span>
-          <span className="op-header__sep">·</span>
-          <span>自動返答 {autoReplyEnabled ? "ON" : "OFF"}</span>
-          <span className="op-header__sep">·</span>
-          <span>処理待ち {autoReplyPendingCount}</span>
+          <span className="op-status-chip">{runtimeLabel}</span>
+          <span className="op-status-chip">{platformSummary}</span>
+          <span className={`op-status-chip${autoReplyEnabled ? " op-status-chip--on" : ""}`}>
+            自動返答 {autoReplyEnabled ? "ON" : "OFF"}
+          </span>
+          <span className="op-status-chip">処理待ち {autoReplyPendingCount}</span>
         </div>
         <div className="op-header__actions">
           <button
@@ -193,7 +226,16 @@ export function OperatorConsole(props: OperatorConsoleProps) {
             onClick={onOpenStagePreview}
             title="このタブをステージ表示に切り替え"
           >
-            ステージ表示
+            <MonitorPlay size={16} aria-hidden /> ステージ表示
+          </button>
+          <button
+            className="btn btn--ghost btn--icon btn--sm"
+            type="button"
+            aria-label={theme === "dark" ? "ライトテーマに切り替え" : "ダークテーマに切り替え"}
+            title={theme === "dark" ? "ライトテーマ" : "ダークテーマ"}
+            onClick={toggleTheme}
+          >
+            {theme === "dark" ? <Sun size={16} aria-hidden /> : <Moon size={16} aria-hidden />}
           </button>
           <button
             className="btn btn--ghost btn--icon btn--sm"
@@ -436,6 +478,16 @@ export function OperatorConsole(props: OperatorConsoleProps) {
       </section>
     </main>
   )
+}
+
+function formatUptime(elapsedMs: number) {
+  const totalSeconds = Math.max(0, Math.floor(elapsedMs / 1000))
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+  const mm = String(minutes).padStart(2, "0")
+  const ss = String(seconds).padStart(2, "0")
+  return hours > 0 ? `${hours}:${mm}:${ss}` : `${mm}:${ss}`
 }
 
 function platformTargetLabel(mode: PlatformChatMode) {

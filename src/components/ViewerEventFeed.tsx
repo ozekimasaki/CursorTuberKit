@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react"
 import { AlertTriangle } from "lucide-react"
 import type { PlatformViewerEvent } from "../../shared/platformChat"
 
@@ -27,6 +28,11 @@ export function ViewerEventFeed({
           <li
             key={event.id}
             className={`event-item${event.isMonetized ? " event-item--monetized" : ""}`}
+            style={
+              event.isMonetized && event.monetization?.accentColor
+                ? ({ "--event-accent": event.monetization.accentColor } as CSSProperties)
+                : undefined
+            }
           >
             <div className="event-item__head">
               <div className="event-item__author-block">
@@ -38,7 +44,12 @@ export function ViewerEventFeed({
               )}
             </div>
             <div className="event-item__meta">
-              <span className="event-item__badge">{eventLabel(event)}</span>
+              <span className={`event-item__badge event-item__badge--${event.platform}`}>
+                {eventLabel(event)}
+              </span>
+              {event.isMonetized && event.kind !== "comment" && (
+                <span className="event-item__badge event-item__badge--monetized">✦</span>
+              )}
             </div>
             {showModeration && (
               <div className={`event-item__moderation event-item__moderation--${moderationKind}`}>
