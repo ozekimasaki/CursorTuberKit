@@ -1,13 +1,25 @@
 import { randomUUID } from "node:crypto"
 import { access, mkdir, readFile, rm, unlink, writeFile } from "node:fs/promises"
 import path from "node:path"
-import { Agent, CursorSdkError, type Run, type SDKAgent } from "@cursor/sdk"
+import {
+  Agent,
+  AgentBusyError,
+  AuthenticationError,
+  ConfigurationError,
+  CursorSdkError,
+  NetworkError,
+  RateLimitError,
+  type Run,
+  type SDKAgent,
+  type SDKCustomTool,
+  type SendOptions,
+} from "@cursor/sdk"
 import { characterSinNames, normalizeCharacterSinValues, type CharacterSinName } from "../shared/characterState.js"
 import type { CursorPromptMode } from "../shared/cursorPrompt.js"
 import type { ChatActionPayload, ChatMetadataPayload, ChatSessionPayload } from "../shared/chatStream.js"
 import type { CharacterArtifactsPayload } from "../shared/characterAgents.js"
 import { characterProfile } from "../shared/characterProfile.js"
-import { inferEmotionFromText, type FinalEmotionPayload } from "../shared/emotion.js"
+import { emotionValues, inferEmotionFromText, isEmotionValue, type Emotion, type FinalEmotionPayload } from "../shared/emotion.js"
 import { deriveCharacterArtifacts } from "./characterAgents.js"
 import { readCharacterRuntimeSinValues, updateCharacterRuntimeSinValuesFromHook } from "./characterRuntimeState.js"
 import { collectCursorRun } from "./cursorSdkRun.js"
@@ -85,6 +97,8 @@ const hookStateDir = resolveHookStateDir(input.session.browserSessionId)
 
 let agent: SDKAgent | null = null
 let run: Run | null = null
+let toolDeclaredEmotion: Emotion | null = null
+let textChannel: "delta" | "stream" | null = null
 let cancelPromise: Promise<void> | null = null
 let hookManifestPath: string | null = null
 let receivedTerminationSignal = false
@@ -143,7 +157,18 @@ try {
   const promptToSend = promptMode === "resume-compact" ? input.compactPrompt?.trim() || input.compiledPrompt : input.compiledPrompt
   const promptLength = promptToSend.length
 
-  run = await startCursorRun(agent, promptToSend, selectedModel)
+  run = await startCursorRun(agent, promptToSend, selectedModel, {
+    idempotencyKey: randomUUID(),
+    local: {
+      customTools: createMainRunCustomTools(),
+    },
+    onDelta: ({ update }) => {
+      if (update.type === "text-delta" && update.text && textChannel !== "stream") {
+        textChannel = "delta"
+        writeOutput({ type: "text", text: update.text })
+      }
+    },
+  })
   hookManifestPath = await writeHookManifest(run.id, hookStateDir)
 
   const previousRunId = sessionRecord?.lastRunId
@@ -185,6 +210,10 @@ try {
   const mainRunStartedAt = new Date().toISOString()
   const mainRunResult = await collectCursorRun(run, {
     onText: (text) => {
+      if (textChannel === "delta") {
+        return
+      }
+      textChannel = "stream"
       writeOutput({ type: "text", text })
     },
   })
@@ -284,6 +313,7 @@ try {
       normalizedResponse,
       characterArtifactsResult.payload,
       Boolean(stopHookPayload),
+      toolDeclaredEmotion,
     )
     const hookEmotionDrift = await applyHookDrivenCharacterDrift({
       apiKey,
@@ -301,9 +331,11 @@ try {
     }
     writeAction({
       detail:
-        finalEmotion.source === "cursor-subagent"
-          ? `${finalEmotion.hookObserved ? "Character Director の感情分析を stop hook 観測つきで確定しました。" : "Character Director の感情分析を再利用して最終感情を確定しました。"} ${hookEmotionDrift.detail}`
-          : `Character artifacts が使えないため本文から感情を推定しました。${hookEmotionDrift.detail}`,
+        finalEmotion.source === "agent-tool"
+          ? `本人が set_emotion ツールで申告した感情を最終感情として採用しました。 ${hookEmotionDrift.detail}`
+          : finalEmotion.source === "cursor-subagent"
+            ? `${finalEmotion.hookObserved ? "Character Director の感情分析を stop hook 観測つきで確定しました。" : "Character Director の感情分析を再利用して最終感情を確定しました。"} ${hookEmotionDrift.detail}`
+            : `Character artifacts が使えないため本文から感情を推定しました。${hookEmotionDrift.detail}`,
       kind: "emotion-finalize",
       provider: "cursor",
       source: finalEmotion.source,
@@ -336,7 +368,7 @@ try {
   if (!receivedTerminationSignal) {
     writeOutput({
       type: "error",
-      message: error instanceof Error ? error.message : "Cursor 応答の生成に失敗しました。",
+      message: describeCursorWorkerError(error),
     })
     process.exitCode = 1
   }
@@ -448,10 +480,16 @@ async function resumeExistingAgent(
   }
 }
 
-async function startCursorRun(agent: SDKAgent, compiledPrompt: string, selectedModel: { id: string }) {
+async function startCursorRun(
+  agent: SDKAgent,
+  compiledPrompt: string,
+  selectedModel: { id: string },
+  extras: SendOptions = {},
+) {
   try {
     return setActiveRun(
       await agent.send(compiledPrompt, {
+        ...extras,
         model: selectedModel,
       }),
     )
@@ -462,8 +500,11 @@ async function startCursorRun(agent: SDKAgent, compiledPrompt: string, selectedM
 
     return setActiveRun(
       await agent.send(compiledPrompt, {
+        ...extras,
+        idempotencyKey: extras.idempotencyKey ? randomUUID() : undefined,
         model: selectedModel,
         local: {
+          ...extras.local,
           force: true,
         },
       }),
@@ -536,11 +577,73 @@ function resolveHookStateDir(browserSessionId: string) {
   return path.join(HOOK_RUNTIME_DIR, `${sanitizeHookKey(browserSessionId)}-${process.pid}-${randomUUID()}`)
 }
 
+function createMainRunCustomTools(): Record<string, SDKCustomTool> {
+  return {
+    set_emotion: {
+      description: `返答時の自分の感情を申告するツール。返答本文を書き終える前に、いまの感情に最も近いものを 1 回呼び出して申告する。emotion は ${emotionValues.join(" / ")} のいずれか。`,
+      inputSchema: {
+        type: "object",
+        properties: {
+          emotion: {
+            type: "string",
+            enum: [...emotionValues],
+          },
+        },
+        required: ["emotion"],
+      },
+      execute: (args) => {
+        if (!isEmotionValue(args.emotion)) {
+          return {
+            content: [{ type: "text", text: `emotion は ${emotionValues.join(" / ")} のいずれかで指定してください。` }],
+            isError: true,
+          }
+        }
+
+        toolDeclaredEmotion = args.emotion
+        return `感情 "${args.emotion}" を記録しました。`
+      },
+    },
+  }
+}
+
+function describeCursorWorkerError(error: unknown): string {
+  if (error instanceof AuthenticationError) {
+    return "Cursor API キーの認証に失敗しました。CURSOR_API_KEY を確認してください。"
+  }
+
+  if (error instanceof RateLimitError) {
+    return "Cursor API のレート制限に達しました。少し待ってから再試行してください。"
+  }
+
+  if (error instanceof AgentBusyError) {
+    return "Cursor エージェントが別の Run を実行中です。少し待ってから再試行してください。"
+  }
+
+  if (error instanceof NetworkError) {
+    return "Cursor API への接続に失敗しました。ネットワーク状態を確認してください。"
+  }
+
+  if (error instanceof ConfigurationError) {
+    return `Cursor SDK の設定に問題があります: ${error.message}`
+  }
+
+  return error instanceof Error ? error.message : "Cursor 応答の生成に失敗しました。"
+}
+
 function deriveFinalEmotionFromArtifacts(
   assistantText: string,
   artifacts: CharacterArtifactsPayload,
   hookObserved: boolean,
+  declaredEmotion: Emotion | null,
 ): FinalEmotionPayload {
+  if (declaredEmotion) {
+    return {
+      emotion: declaredEmotion,
+      hookObserved,
+      source: "agent-tool",
+    }
+  }
+
   const derivedEmotion = artifacts.director.focusEmotion
 
   if (!derivedEmotion) {

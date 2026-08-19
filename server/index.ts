@@ -1,4 +1,5 @@
 import express, { type Request, type Response } from "express"
+import { Cursor, type SDKModel } from "@cursor/sdk"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import type { ChatAutomationRequest } from "../shared/automation.js"
@@ -109,6 +110,37 @@ app.get("/api/runtime/status", asyncRoute(async (_request, response) => {
     characterRule,
     characterStateCurrent,
   })
+}))
+
+const cursorModelsCache: { fetchedAt: number; models: SDKModel[] } = { fetchedAt: 0, models: [] }
+const CURSOR_MODELS_CACHE_TTL_MS = 10 * 60 * 1000
+
+app.get("/api/cursor/models", asyncRoute(async (_request, response) => {
+  const apiKey = process.env.CURSOR_API_KEY?.trim()
+
+  if (!apiKey) {
+    response.status(503).json({ error: "CURSOR_API_KEY が未設定のためモデル一覧を取得できません。", models: [] })
+    return
+  }
+
+  if (cursorModelsCache.models.length > 0 && Date.now() - cursorModelsCache.fetchedAt < CURSOR_MODELS_CACHE_TTL_MS) {
+    response.json({ cached: true, models: cursorModelsCache.models })
+    return
+  }
+
+  try {
+    const models = await Cursor.models.list({ apiKey })
+    cursorModelsCache.fetchedAt = Date.now()
+    cursorModelsCache.models = models
+    response.json({ cached: false, models })
+  } catch (error) {
+    if (cursorModelsCache.models.length > 0) {
+      response.json({ cached: true, models: cursorModelsCache.models, warning: getErrorMessage(error) })
+      return
+    }
+
+    response.status(502).json({ error: getErrorMessage(error), models: [] })
+  }
 }))
 
 app.get("/api/chat-settings", asyncRoute(async (_request, response) => {
@@ -598,9 +630,11 @@ app.post("/api/chat/stream", async (request: Request<Record<string, never>, unkn
 
       writeMetadata(response, "task", {
         detail:
-          finalEmotion.source === "cursor-subagent"
-            ? `最終感情は ${finalEmotion.emotion} です。${finalEmotion.hookObserved ? " stop hook を観測しました。" : ""}`
-            : `最終感情は ${finalEmotion.emotion} です。本文から推定しました。`,
+          finalEmotion.source === "agent-tool"
+            ? `最終感情は ${finalEmotion.emotion} です。本人が set_emotion ツールで申告しました。`
+            : finalEmotion.source === "cursor-subagent"
+              ? `最終感情は ${finalEmotion.emotion} です。${finalEmotion.hookObserved ? " stop hook を観測しました。" : ""}`
+              : `最終感情は ${finalEmotion.emotion} です。本文から推定しました。`,
         label: "最終感情を確定しました",
         name: finalEmotion.emotion,
         status: "done",

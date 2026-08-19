@@ -130,7 +130,12 @@ function buildToneSurface(
   }
 
   const emotionLabel = formatEmotionLabel(finalEmotion.emotion)
-  const sourceLabel = finalEmotion.source === "cursor-subagent" ? "Cursor subagent" : "本文推定"
+  const sourceLabel =
+    finalEmotion.source === "agent-tool"
+      ? "本人申告 (tool)"
+      : finalEmotion.source === "cursor-subagent"
+        ? "Cursor subagent"
+        : "本文推定"
 
   return {
     detail: `${sourceLabel}${finalEmotion.hookObserved ? " / stop hook 済み" : ""}`,
