@@ -71,7 +71,9 @@ async function readCharacterRuntimeState(
 
 async function persistCharacterRuntimeState(state: CharacterRuntimeState) {
   cachedRuntimeState = copyCharacterRuntimeState(state)
-  runtimeStateWriteQueue = runtimeStateWriteQueue.then(() => writeCharacterRuntimeStateFile(state))
+  runtimeStateWriteQueue = runtimeStateWriteQueue
+    .catch(() => undefined)
+    .then(() => writeCharacterRuntimeStateFile(state))
   await runtimeStateWriteQueue
   return copyCharacterRuntimeState(state)
 }

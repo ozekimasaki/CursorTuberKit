@@ -51,11 +51,7 @@ export class PlatformChatOrchestrator extends EventEmitter {
     this.desiredConnection = { mode, target: normalizedTarget }
     this.reconnectAttempt = 0
 
-    try {
-      await this.connectDesiredSource({ mode, target: normalizedTarget }, null)
-    } catch (error) {
-      throw error
-    }
+    await this.connectDesiredSource({ mode, target: normalizedTarget }, null)
 
     return this.getSnapshot()
   }

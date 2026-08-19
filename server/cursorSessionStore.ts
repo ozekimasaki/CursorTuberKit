@@ -23,7 +23,7 @@ export async function readCursorChatSessionRecord(browserSessionId: string) {
     const raw = await readFile(resolveCursorSessionPath(browserSessionId), "utf8")
     return JSON.parse(raw) as CursorChatSessionRecord
   } catch (error) {
-    if (isMissingFileError(error)) {
+    if (isMissingFileError(error) || error instanceof SyntaxError) {
       return null
     }
 

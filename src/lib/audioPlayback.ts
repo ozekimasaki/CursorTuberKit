@@ -93,6 +93,7 @@ export async function playAudioBlob(blob: Blob, options: PlayAudioOptions): Prom
 
   return new Promise((resolve, reject) => {
     const cleanup = () => {
+      options.signal.removeEventListener("abort", abort)
       if (animationFrameId !== null) cancelAnimationFrame(animationFrameId)
       audio.pause()
       audio.src = ""
